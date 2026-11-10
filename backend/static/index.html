@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BLACKBOX — Incident Graph</title>
+<style>
+  :root {
+    color-scheme: dark;
+    --surface-0: #141413;
+    --surface-1: #1a1a19;
+    --surface-2: #232321;
+    --border:    #3a3a37;
+    --text-1:    #f0efec;
+    --text-2:    #c3c2b7;
+    --text-muted:#8a897f;
+    /* categorical node hues (dark steps) */
+    --process:   #3987e5;  /* blue   */
+    --http:      #d95926;  /* orange */
+    --network:   #199e70;  /* aqua   */
+    /* edge roles */
+    --edge-parent:  #8a897f;  /* muted: structural */
+    --edge-spawned: #e66767;  /* red: the causal attack link */
+    --edge-network: #9085e9;  /* violet */
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --surface-0: #f5f5f3;
+    --surface-1: #fcfcfb;
+    --surface-2: #eeeeea;
+    --border:    #d6d5cf;
+    --text-1:    #0b0b0b;
+    --text-2:    #52514e;
+    --text-muted:#86857c;
+    --process:   #2a78d6;
+    --http:      #eb6834;
+    --network:   #1baf7a;
+    --edge-parent:  #86857c;
+    --edge-spawned: #e34948;
+    --edge-network: #6250d6;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    font: 14px/1.5 ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+    background: var(--surface-0);
+    color: var(--text-1);
+    display: grid;
+    grid-template-rows: auto 1fr;
+    height: 100vh;
+  }
+  header {
+    display: flex; align-items: center; gap: 16px;
+    padding: 10px 16px;
+    background: var(--surface-1);
+    border-bottom: 1px solid var(--border);
+    flex-wrap: wrap;
+  }
+  header h1 {
+    font-size: 15px; font-weight: 650; margin: 0;
+    letter-spacing: 0.06em;
+  }
+  header h1 span { color: var(--text-muted); font-weight: 400; }
+  .controls { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  select, button {
+    font: inherit;
+    background: var(--surface-2);
+    color: var(--text-1);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 5px 9px;
+    cursor: pointer;
+  }
+  button:hover, select:hover { border-color: var(--text-muted); }
+  .spacer { flex: 1; }
+  .meta { color: var(--text-2); font-size: 13px; }
+
+  main { position: relative; overflow: hidden; }
+  #cy { position: absolute; inset: 0; }
+
+  /* legend */
+  .legend {
+    position: absolute; left: 12px; bottom: 12px;
+    background: color-mix(in srgb, var(--surface-1) 92%, transparent);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 12px;
+    font-size: 12px;
+    display: grid; gap: 7px;
+    backdrop-filter: blur(4px);
+    max-width: 230px;
+  }
+  .legend h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .08em;
+    color: var(--text-muted); margin: 0 0 2px; font-weight: 600; }
+  .legend .row { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+  .legend .row.off { opacity: .35; }
+  .swatch { width: 14px; height: 14px; border-radius: 3px; flex: none; }
+  .swatch.process { background: var(--process); }
+  .swatch.http    { background: var(--http); transform: rotate(45deg); border-radius: 2px; }
+  .swatch.network { background: var(--network); border-radius: 50%; }
+  .line { width: 18px; height: 0; flex: none; border-top-width: 3px; border-top-style: solid; }
+  .line.parent  { border-color: var(--edge-parent); border-top-style: dashed; }
+  .line.spawned { border-color: var(--edge-spawned); }
+  .line.network { border-color: var(--edge-network); }
+
+  /* detail panel */
+  .panel {
+    position: absolute; top: 12px; right: 12px; width: 340px; max-height: calc(100% - 24px);
+    overflow: auto;
+    background: color-mix(in srgb, var(--surface-1) 95%, transparent);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 16px;
+    font-size: 13px;
+    transform: translateX(380px);
+    transition: transform .18s ease;
+    backdrop-filter: blur(6px);
+  }
+  .panel.open { transform: none; }
+  .panel .kind {
+    font-size: 11px; text-transform: uppercase; letter-spacing: .08em;
+    font-weight: 600; margin-bottom: 4px;
+  }
+  .panel .title { font-size: 15px; font-weight: 600; margin-bottom: 12px;
+    word-break: break-word; }
+  .panel dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; margin: 0; }
+  .panel dt { color: var(--text-muted); white-space: nowrap; }
+  .panel dd { margin: 0; word-break: break-word; font-variant-numeric: tabular-nums; }
+  .panel dd.mono { font-family: ui-monospace, Menlo, monospace; font-size: 12px; }
+  .panel .close { position: absolute; top: 10px; right: 12px; background: none;
+    border: none; color: var(--text-muted); font-size: 18px; padding: 0; }
+  .empty { position: absolute; inset: 0; display: grid; place-items: center;
+    color: var(--text-muted); text-align: center; padding: 24px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>BLACKBOX <span>/ incident graph</span></h1>
+  <div class="controls">
+    <label>Scenario
+      <select id="scenario"></select>
+    </label>
+    <label>Layout
+      <select id="layout">
+        <option value="breadthfirst">Hierarchy</option>
+        <option value="cose">Force</option>
+      </select>
+    </label>
+    <label title="Hide HTTP requests that triggered nothing (e.g. scan/SQLi noise)">
+      <input type="checkbox" id="focus" checked> Focus
+    </label>
+    <button id="fit">Fit</button>
+    <button id="reload">Reload</button>
+  </div>
+  <div class="spacer"></div>
+  <div class="meta" id="meta"></div>
+  <button id="theme">◐</button>
+</header>
+
+<main>
+  <div id="cy"></div>
+  <div class="empty" id="empty">Loading…</div>
+
+  <div class="legend" id="legend">
+    <h2>Nodes</h2>
+    <div class="row" data-node="process"><span class="swatch process"></span> Process</div>
+    <div class="row" data-node="http_request"><span class="swatch http"></span> HTTP request</div>
+    <div class="row" data-node="network"><span class="swatch network"></span> Network</div>
+    <h2>Edges — click to toggle</h2>
+    <div class="row" data-edge="parent_of"><span class="line parent"></span> spawned (process tree)</div>
+    <div class="row" data-edge="spawned_by"><span class="line spawned"></span> triggered by request</div>
+    <div class="row" data-edge="connected_to"><span class="line network"></span> connected out</div>
+  </div>
+
+  <aside class="panel" id="panel">
+    <button class="close" id="panelClose">×</button>
+    <div class="kind" id="pKind"></div>
+    <div class="title" id="pTitle"></div>
+    <dl id="pBody"></dl>
+  </aside>
+</main>
+
+<script src="/ui/vendor/cytoscape.min.js"></script>
+<script>
+const $ = (s) => document.querySelector(s);
+const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+
+const EDGE_COLOR = {
+  parent_of:    () => css('--edge-parent'),
+  spawned_by:   () => css('--edge-spawned'),
+  connected_to: () => css('--edge-network'),
+};
+const hiddenEdges = new Set();
+let cy = null;
+
+function nodeColor(kind) {
+  return kind === 'process' ? css('--process')
+       : kind === 'http_request' ? css('--http')
+       : css('--network');
+}
+function nodeShape(kind) {
+  return kind === 'process' ? 'round-rectangle'
+       : kind === 'http_request' ? 'diamond'
+       : 'ellipse';
+}
+
+function buildStyle() {
+  return [
+    { selector: 'node', style: {
+        'background-color': (n) => nodeColor(n.data('kind')),
+        'shape': (n) => nodeShape(n.data('kind')),
+        'label': 'data(short)',
+        'color': css('--text-1'),
+        'font-size': 11,
+        'text-wrap': 'wrap',
+        'text-max-width': 150,
+        'text-valign': 'bottom',
+        'text-margin-y': 4,
+        'width': 26, 'height': 26,
+        'border-width': 2,
+        'border-color': css('--surface-0'),
+    }},
+    { selector: 'node:selected', style: {
+        'border-width': 3, 'border-color': css('--text-1'),
+    }},
+    { selector: 'edge', style: {
+        'width': (e) => e.data('kind') === 'parent_of' ? 1.6 : 2.4,
+        'line-color': (e) => EDGE_COLOR[e.data('kind')](),
+        'line-style': (e) => e.data('kind') === 'parent_of' ? 'dashed' : 'solid',
+        'target-arrow-color': (e) => EDGE_COLOR[e.data('kind')](),
+        'target-arrow-shape': 'triangle',
+        'arrow-scale': 0.9,
+        'curve-style': 'bezier',
+    }},
+    { selector: 'edge.hidden', style: { 'display': 'none' } },
+    { selector: '.faded', style: { 'opacity': 0.12 } },
+  ];
+}
+
+function layoutOpts(name) {
+  if (name === 'breadthfirst')
+    return { name: 'breadthfirst', directed: true, spacingFactor: 1.15,
+             padding: 30, animate: true, animationDuration: 300 };
+  return { name: 'cose', padding: 30, animate: true, animationDuration: 400,
+           nodeRepulsion: 9000, idealEdgeLength: 90 };
+}
+
+async function loadScenarios() {
+  const res = await fetch('/scenarios');
+  const list = await res.json();
+  const sel = $('#scenario');
+  sel.innerHTML = '';
+  for (const s of list) {
+    const o = document.createElement('option');
+    o.value = s.scenario_id;
+    o.textContent = `${s.scenario_id} (${s.event_count})`;
+    sel.appendChild(o);
+  }
+  return list.length > 0;
+}
+
+function shortLabel(n) {
+  if (n.kind === 'http_request') {
+    const p = (n.label || '').split('?')[0];
+    return p.length > 28 ? p.slice(0, 27) + '…' : p;
+  }
+  return n.label || n.kind;
+}
+
+async function loadGraph() {
+  const sid = $('#scenario').value;
+  if (!sid) return;
+  const res = await fetch(`/incidents/${encodeURIComponent(sid)}/graph`);
+  if (!res.ok) { $('#empty').textContent = 'No graph for this scenario.';
+                 $('#empty').style.display = 'grid'; return; }
+  const g = await res.json();
+  $('#empty').style.display = 'none';
+
+  const counts = g.edges.reduce((a, e) => (a[e.kind] = (a[e.kind]||0)+1, a), {});
+  const connected0 = new Set();
+  g.edges.forEach((e) => { connected0.add(e.source); connected0.add(e.target); });
+  const hidden0 = $('#focus').checked
+    ? g.nodes.filter((n) => n.kind === 'http_request' && !connected0.has(n.id)).length
+    : 0;
+  $('#meta').textContent =
+    `${g.event_count} events · ${g.nodes.length} nodes · ` +
+    `${counts.spawned_by||0} triggered · ${counts.parent_of||0} spawned · ` +
+    `${counts.connected_to||0} net` +
+    (hidden0 ? ` · ${hidden0} noise hidden` : '');
+
+  // Focus mode: drop HTTP requests that triggered nothing (scan/SQLi noise),
+  // so the reconstructed attack chain is what you see.
+  const connected = new Set();
+  g.edges.forEach((e) => { connected.add(e.source); connected.add(e.target); });
+  const focus = $('#focus').checked;
+  const nodes = g.nodes.filter((n) =>
+    !focus || n.kind !== 'http_request' || connected.has(n.id));
+
+  const elements = [
+    ...nodes.map((n) => ({ data: { ...n, short: shortLabel(n) } })),
+    ...g.edges.map((e, i) => ({ data: { id: `e${i}`, ...e } })),
+  ];
+
+  if (cy) cy.destroy();
+  cy = cytoscape({
+    container: $('#cy'),
+    elements,
+    style: buildStyle(),
+    layout: layoutOpts($('#layout').value),
+    wheelSensitivity: 0.2,
+  });
+
+  cy.on('tap', 'node', (ev) => showDetail(ev.target));
+  cy.on('tap', (ev) => { if (ev.target === cy) { clearDetail(); } });
+  applyEdgeFilter();
+}
+
+function row(dt, dd, mono) {
+  if (dd === null || dd === undefined || dd === '') return '';
+  return `<dt>${dt}</dt><dd class="${mono?'mono':''}">${escapeHtml(String(dd))}</dd>`;
+}
+function escapeHtml(s) {
+  return s.replace(/[&<>"]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+}
+
+function showDetail(node) {
+  const d = node.data();
+  $('#pKind').textContent = d.kind.replace('_', ' ');
+  $('#pKind').style.color = nodeColor(d.kind);
+  $('#pTitle').textContent = d.label || d.kind;
+  let html = '';
+  if (d.kind === 'process') {
+    html += row('PID', d.pid) + row('Parent PID', d.parent_pid)
+          + row('Command', d.command_line, true) + row('Container', d.container, true)
+          + row('Time', d.timestamp, true);
+  } else if (d.kind === 'http_request') {
+    html += row('Status', d.status) + row('Source IP', d.source_ip, true)
+          + row('Container', d.container, true) + row('Time', d.timestamp, true);
+  } else {
+    html += row('Destination', `${d.destination_ip}:${d.destination_port}`, true)
+          + row('Protocol', d.protocol) + row('From PID', d.pid)
+          + row('Time', d.timestamp, true);
+  }
+  // show incoming/outgoing relations with reasons
+  const edges = node.connectedEdges().filter(e => !e.hasClass('hidden'));
+  edges.forEach((e) => {
+    const dir = e.source().id() === node.id() ? '→' : '←';
+    const other = e.source().id() === node.id() ? e.target() : e.source();
+    html += row(`${dir} ${e.data('kind').replace('_',' ')}`,
+                `${other.data('short')} — ${e.data('reason')}`);
+  });
+  $('#pBody').innerHTML = html;
+  $('#panel').classList.add('open');
+
+  cy.elements().addClass('faded');
+  node.closedNeighborhood().removeClass('faded');
+}
+function clearDetail() {
+  $('#panel').classList.remove('open');
+  if (cy) cy.elements().removeClass('faded');
+}
+
+function applyEdgeFilter() {
+  if (!cy) return;
+  cy.edges().forEach((e) => {
+    e.toggleClass('hidden', hiddenEdges.has(e.data('kind')));
+  });
+}
+
+// legend edge toggles
+document.querySelectorAll('.legend .row[data-edge]').forEach((row) => {
+  row.addEventListener('click', () => {
+    const k = row.dataset.edge;
+    if (hiddenEdges.has(k)) { hiddenEdges.delete(k); row.classList.remove('off'); }
+    else { hiddenEdges.add(k); row.classList.add('off'); }
+    applyEdgeFilter();
+  });
+});
+
+$('#scenario').addEventListener('change', loadGraph);
+$('#layout').addEventListener('change', () => { if (cy) cy.layout(layoutOpts($('#layout').value)).run(); });
+$('#fit').addEventListener('click', () => cy && cy.fit(undefined, 40));
+$('#reload').addEventListener('click', loadGraph);
+$('#focus').addEventListener('change', loadGraph);
+$('#panelClose').addEventListener('click', clearDetail);
+$('#theme').addEventListener('click', () => {
+  const root = document.documentElement;
+  root.dataset.theme = root.dataset.theme === 'light' ? 'dark' : 'light';
+  if (cy) cy.style(buildStyle());
+});
+
+(async function init() {
+  const has = await loadScenarios();
+  if (!has) { $('#empty').textContent = 'No scenarios yet. Ingest some events.'; return; }
+  await loadGraph();
+})();
+</script>
+</body>
+</html>

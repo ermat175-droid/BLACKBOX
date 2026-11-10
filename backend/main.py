@@ -1,10 +1,14 @@
 from contextlib import asynccontextmanager
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 
 from fastapi import Body, Depends, FastAPI, HTTPException, Query
-from sqlalchemy import select
+from fastapi.staticfiles import StaticFiles
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
+
+STATIC_DIR = Path(__file__).resolve().parent / "static"
 
 from backend.correlation import correlate
 from backend.database import Base, SessionLocal, engine
@@ -51,6 +55,31 @@ def root():
 @app.get("/health")
 def health():
     return {"status": "healthy"}
+
+
+@app.get("/scenarios")
+def list_scenarios(db: Session = Depends(get_db)):
+    rows = db.execute(
+        select(
+            Event.scenario_id,
+            func.count(Event.id),
+            func.min(Event.timestamp),
+            func.max(Event.timestamp),
+        )
+        .where(Event.scenario_id.is_not(None))
+        .group_by(Event.scenario_id)
+        .order_by(func.max(Event.timestamp).desc())
+    ).all()
+
+    return [
+        {
+            "scenario_id": sid,
+            "event_count": count,
+            "first_seen": first.isoformat() if first else None,
+            "last_seen": last.isoformat() if last else None,
+        }
+        for sid, count, first, last in rows
+    ]
 
 
 @app.post("/events", response_model=EventResponse, status_code=201)
@@ -156,3 +185,7 @@ def incident_graph(scenario_id: str, db: Session = Depends(get_db)):
     graph["scenario_id"] = scenario_id
     graph["event_count"] = len(events)
     return graph
+
+
+# The web UI is served at /ui (mounted last so it never shadows the API).
+app.mount("/ui", StaticFiles(directory=STATIC_DIR, html=True), name="ui")
