@@ -71,5 +71,58 @@ class TestTetragonCollector(unittest.TestCase):
         )
 
 
+def _connect_event(binary, pid, docker, daddr, dport):
+    return {
+        "time": "2026-11-10T12:00:03.000Z",
+        "process_kprobe": {
+            "function_name": "tcp_connect",
+            "process": {
+                "pid": pid,
+                "binary": binary,
+                "docker": docker,
+            },
+            "args": [
+                {"sock_arg": {
+                    "saddr": "172.17.0.5",
+                    "daddr": daddr,
+                    "sport": 40000,
+                    "dport": dport,
+                    "protocol": "IPPROTO_TCP",
+                }},
+            ],
+        },
+    }
+
+
+class TestConnectMapping(unittest.TestCase):
+
+    def test_maps_tcp_connect(self):
+        raw = map_event(
+            _connect_event(
+                "/usr/bin/curl", 1200,
+                "9c6810f2abd8a2e2d0d5a8b82c11a7b",
+                "192.0.2.10", 80,
+            ),
+            scenario_id="BB-M1",
+        )
+        self.assertEqual(raw["event_type"], "network_connection")
+        self.assertEqual(raw["data"]["destination_ip"], "192.0.2.10")
+        self.assertEqual(raw["data"]["destination_port"], 80)
+        self.assertEqual(raw["data"]["protocol"], "TCP")
+
+        norm = normalize_event(raw)
+        self.assertEqual(norm["network"]["destination_ip"], "192.0.2.10")
+        self.assertEqual(norm["network"]["destination_port"], 80)
+        self.assertEqual(norm["process"]["pid"], 1200)
+
+    def test_other_kprobe_ignored(self):
+        self.assertIsNone(
+            map_event(
+                {"process_kprobe": {"function_name": "sys_open"}},
+                scenario_id=None,
+            )
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

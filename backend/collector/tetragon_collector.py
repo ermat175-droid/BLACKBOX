@@ -56,29 +56,23 @@ def _container_id(process: dict) -> str | None:
     return docker[:MATCH_LEN]
 
 
-def map_event(tetra_event: dict, scenario_id: str | None) -> dict | None:
-    """Translate one Tetragon event into a BLACKBOX raw event.
+def _sock_arg(kprobe: dict) -> dict:
+    for arg in kprobe.get("args", []):
+        if "sock_arg" in arg:
+            return arg["sock_arg"]
+    return {}
 
-    Returns None for event kinds we do not ingest.
-    """
 
-    exec_ = tetra_event.get("process_exec")
-    if exec_ is None:
-        # process_exit and other kinds are ignored for now; the exec
-        # stream alone is enough to reconstruct the process tree.
-        return None
-
+def _map_exec(exec_: dict, scenario_id: str | None) -> dict:
     process = exec_.get("process") or {}
     parent = exec_.get("parent") or {}
-
     container_id = _container_id(process)
-    timestamp = process.get("start_time") or tetra_event.get("time")
 
     return {
         "event_id": process.get("exec_id"),
         "source": "tetragon",
         "event_type": "process_created",
-        "timestamp": timestamp,
+        "timestamp": process.get("start_time"),
         "severity": "info",
         "data": {
             "scenario_id": scenario_id,
@@ -92,6 +86,56 @@ def map_event(tetra_event: dict, scenario_id: str | None) -> dict | None:
             "container_id": container_id,
         },
     }
+
+
+def _map_connect(kprobe: dict, time: str | None, scenario_id: str | None) -> dict:
+    process = kprobe.get("process") or {}
+    container_id = _container_id(process)
+    sock = _sock_arg(kprobe)
+
+    proto = (sock.get("protocol") or "").replace("IPPROTO_", "") or None
+
+    # Stable id: one connect per (pid, dest) is enough for the graph.
+    event_id = (
+        f"conn-{process.get('pid')}-{sock.get('daddr')}-{sock.get('dport')}"
+    )
+
+    return {
+        "event_id": event_id,
+        "source": "tetragon",
+        "event_type": "network_connection",
+        "timestamp": time,
+        "severity": "warning",
+        "data": {
+            "scenario_id": scenario_id,
+            "host": container_id,
+            "container_id": container_id,
+            "process_name": _posix_name(process.get("binary")),
+            "pid": process.get("pid"),
+            "source_ip": sock.get("saddr"),
+            "destination_ip": sock.get("daddr"),
+            "destination_port": sock.get("dport"),
+            "protocol": proto,
+        },
+    }
+
+
+def map_event(tetra_event: dict, scenario_id: str | None) -> dict | None:
+    """Translate one Tetragon event into a BLACKBOX raw event.
+
+    Handles process_exec (process tree) and tcp_connect kprobes
+    (outbound network connections). Returns None for other kinds.
+    """
+
+    exec_ = tetra_event.get("process_exec")
+    if exec_ is not None:
+        return _map_exec(exec_, scenario_id)
+
+    kprobe = tetra_event.get("process_kprobe")
+    if kprobe is not None and kprobe.get("function_name") == "tcp_connect":
+        return _map_connect(kprobe, tetra_event.get("time"), scenario_id)
+
+    return None
 
 
 def send_event(api_url: str, event: dict) -> tuple[bool, str]:
@@ -155,11 +199,14 @@ def run(args: argparse.Namespace) -> None:
     )
 
     for tetra_event in stream_events(args.sensor_container):
-        exec_ = tetra_event.get("process_exec")
-        if exec_ is None:
+        inner = (
+            tetra_event.get("process_exec")
+            or tetra_event.get("process_kprobe")
+        )
+        if inner is None:
             continue
 
-        container_id = _container_id(exec_.get("process") or {})
+        container_id = _container_id(inner.get("process") or {})
         if matches and container_id not in matches:
             continue
 
@@ -170,9 +217,13 @@ def run(args: argparse.Namespace) -> None:
         ok, detail = send_event(args.api, event)
         if ok:
             sent += 1
-            name = event["data"]["process_name"]
-            print(f"[+] {name} (pid {event['data']['pid']}) -> {detail}",
-                  flush=True)
+            d = event["data"]
+            if event["event_type"] == "network_connection":
+                label = (f"{d['process_name']} -> "
+                         f"{d['destination_ip']}:{d['destination_port']}")
+            else:
+                label = f"{d['process_name']} (pid {d['pid']})"
+            print(f"[+] {label} -> {detail}", flush=True)
         else:
             print(f"[-] send failed: {detail}", file=sys.stderr, flush=True)
 
