@@ -72,7 +72,7 @@ BLACKBOX
 
 ### В разработке
 
-- [ ] Event Normalization.
+- [x] Event Normalization.
 - [ ] Correlation Engine.
 - [ ] Detection Engine.
 - [ ] MITRE ATT&CK Mapping.

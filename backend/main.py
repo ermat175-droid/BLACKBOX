@@ -1,16 +1,28 @@
-from fastapi import FastAPI, Depends
+from contextlib import asynccontextmanager
+from datetime import datetime
+from typing import Any
+
+from fastapi import Body, Depends, FastAPI, HTTPException, Query
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.database import Base, engine, SessionLocal
+from backend.database import Base, SessionLocal, engine
 from backend.models import Event
-from backend.schemas import EventCreate, EventResponse
+from backend.normalization import normalize_event
+from backend.schemas import EventResponse
 
-Base.metadata.create_all(bind=engine)
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    Base.metadata.create_all(bind=engine)
+    yield
+
 
 app = FastAPI(
     title="BLACKBOX",
     description="Cyber Investigation Platform",
-    version="0.1.0"
+    version="0.2.0",
+    lifespan=lifespan,
 )
 
 
@@ -21,6 +33,10 @@ def get_db():
         yield db
     finally:
         db.close()
+
+
+def to_response(event: Event) -> dict:
+    return {"id": event.id, **event.normalized}
 
 
 @app.get("/")
@@ -36,20 +52,81 @@ def health():
     return {"status": "healthy"}
 
 
-@app.post("/events", response_model=EventResponse)
+@app.post("/events", response_model=EventResponse, status_code=201)
 def create_event(
-    event: EventCreate,
+    raw: dict[str, Any] = Body(...),
     db: Session = Depends(get_db)
 ):
-    new_event = Event(**event.model_dump())
+    try:
+        normalized = normalize_event(raw)
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error))
 
-    db.add(new_event)
+    exists = db.scalar(
+        select(Event.id).where(Event.event_id == normalized["event_id"])
+    )
+    if exists is not None:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Event {normalized['event_id']} already exists"
+        )
+
+    process = normalized["process"]
+    network = normalized["network"]
+
+    event = Event(
+        event_id=normalized["event_id"],
+        timestamp=datetime.fromisoformat(normalized["timestamp"]),
+        event_type=normalized["event_type"],
+        source=normalized["source"],
+        severity=normalized["severity"],
+        hostname=normalized["hostname"],
+        scenario_id=normalized["scenario_id"],
+        synthetic=normalized["synthetic"],
+        process_name=process["name"],
+        pid=process["pid"],
+        parent_pid=process["parent_pid"],
+        destination_ip=network["destination_ip"],
+        destination_port=network["destination_port"],
+        normalized=normalized,
+        raw_data=raw,
+    )
+
+    db.add(event)
     db.commit()
-    db.refresh(new_event)
+    db.refresh(event)
 
-    return new_event
+    return to_response(event)
 
 
-@app.get("/events")
-def get_events(db: Session = Depends(get_db)):
-    return db.query(Event).order_by(Event.id.desc()).all()
+@app.get("/events", response_model=list[EventResponse])
+def get_events(
+    scenario_id: str | None = None,
+    event_type: str | None = None,
+    hostname: str | None = None,
+    limit: int = Query(100, ge=1, le=1000),
+    offset: int = Query(0, ge=0),
+    db: Session = Depends(get_db)
+):
+    query = select(Event)
+
+    if scenario_id:
+        query = query.where(Event.scenario_id == scenario_id)
+    if event_type:
+        query = query.where(Event.event_type == event_type)
+    if hostname:
+        query = query.where(Event.hostname == hostname)
+
+    query = query.order_by(Event.timestamp, Event.id).limit(limit).offset(offset)
+
+    return [to_response(event) for event in db.scalars(query)]
+
+
+@app.get("/events/{event_id}", response_model=EventResponse)
+def get_event(event_id: int, db: Session = Depends(get_db)):
+    event = db.get(Event, event_id)
+
+    if event is None:
+        raise HTTPException(status_code=404, detail="Event not found")
+
+    return to_response(event)

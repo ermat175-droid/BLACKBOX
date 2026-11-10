@@ -337,7 +337,7 @@ nothing to commit, working tree clean
 
 - [x] Day 0 — Backend Foundation.
 - [x] Day 1 — Synthetic Scenario Simulator.
-- [ ] Day 2 — Event Normalization.
+- [x] Day 2 — Event Normalization.
 - [ ] Day 3 — Correlation Engine.
 - [ ] Day 4 — Detection Engine.
 - [ ] Day 5 — Rules Management.

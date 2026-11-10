@@ -1,7 +1,9 @@
+import os
+
 from sqlalchemy import create_engine
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
-DATABASE_URL = "sqlite:///./blackbox.db"
+DATABASE_URL = os.getenv("BLACKBOX_DATABASE_URL", "sqlite:///./blackbox.db")
 
 engine = create_engine(
     DATABASE_URL,
