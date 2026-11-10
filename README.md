@@ -69,17 +69,23 @@ BLACKBOX
 - [x] Синтетический сценарий BB-001.
 - [x] Scenario Simulator для отправки тестовых событий в API.
 - [x] Базовая Git-структура и `.gitignore`.
+- [x] Event Normalization (канонический формат + raw + индексы).
+- [x] Нормализация встроена в API ingestion (`POST /events`).
+- [x] Collector: процессы и сеть через Tetragon (eBPF, без правки машин).
+- [x] Collector: HTTP-запросы из логов Apache.
+- [x] Correlation Engine: граф инцидента (`parent_of`, `spawned_by`,
+      `connected_to`), у каждой связи есть обоснование.
+- [x] Web Dashboard: граф инцидента на Cytoscape (`GET /ui`).
+- [x] Лаборатория: уязвимые CTF-машины (Iceberg Zone 1), захват телеметрии
+      проверен сквозным прогоном реальной атаки machine1.
 
 ### В разработке
 
-- [x] Event Normalization.
-- [ ] Correlation Engine.
-- [ ] Detection Engine.
-- [ ] MITRE ATT&CK Mapping.
 - [ ] Timeline Builder.
-- [ ] Evidence Graph.
+- [ ] Detection Engine (правила в стиле Sigma).
+- [ ] MITRE ATT&CK Mapping.
+- [ ] Подключение остальных 7 CTF-машин к коллектору.
 - [ ] AI Investigator.
-- [ ] Web Dashboard.
 
 ## Технологии
 
