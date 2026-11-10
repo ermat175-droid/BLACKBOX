@@ -70,7 +70,10 @@ def normalize_event(raw: dict) -> dict:
         data = {}
 
     process = data.get("process")
-    if not isinstance(process, dict):
+    if isinstance(process, str):
+        # Flat form used by scenarios: "process": "bash"
+        process = {"name": process}
+    elif not isinstance(process, dict):
         process = {}
 
     network = data.get("network")
@@ -91,6 +94,8 @@ def normalize_event(raw: dict) -> dict:
 
     synthetic = _pick([raw, data], "synthetic")
 
+    protocol = _pick(sources, "protocol", "Protocol")
+
     return {
         "schema_version": "1.0",
         "event_id": str(event_id or uuid4()),
@@ -99,15 +104,19 @@ def normalize_event(raw: dict) -> dict:
         "source": str(
             _pick([raw, data], "source", "provider") or "unknown"
         ),
-        "hostname": _pick([raw, data], "hostname", "host", "computer"),
+        "hostname": _pick(
+            [raw, data], "hostname", "host", "computer", "Computer"
+        ),
         "scenario_id": _pick([raw, data], "scenario_id"),
         "synthetic": _to_bool(synthetic),
         "severity": str(severity).strip().lower(),
 
         "process": {
-            "name": _pick(
+            # "name" is only trusted inside the process object: at the top
+            # level it may describe something else (e.g. a scenario).
+            "name": _pick([process], "name") or _pick(
                 sources,
-                "process_name", "image", "Image", "name"
+                "process_name", "image", "Image", "source_process"
             ),
             "pid": _to_int(
                 _pick(sources, "pid", "process_id", "ProcessId"),
@@ -133,11 +142,7 @@ def normalize_event(raw: dict) -> dict:
                 _pick(sources, "destination_port", "dest_port", "DestinationPort"),
                 "destination_port"
             ),
-            "protocol": (
-                str(_pick(sources, "protocol", "Protocol")).upper()
-                if _pick(sources, "protocol", "Protocol") is not None
-                else None
-            ),
+            "protocol": str(protocol).upper() if protocol is not None else None,
         },
 
         "raw_data": raw,

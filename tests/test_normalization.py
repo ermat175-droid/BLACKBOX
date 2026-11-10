@@ -1,4 +1,6 @@
+import json
 import unittest
+from pathlib import Path
 
 from backend.normalization import normalize_event
 
@@ -80,6 +82,55 @@ class TestNormalization(unittest.TestCase):
 
         with self.assertRaises(ValueError):
             normalize_event(raw)
+
+    def test_bb001_scenario(self):
+        """Every event of the real BB-001 scenario must normalize fully."""
+        scenario_file = (
+            Path(__file__).resolve().parent.parent
+            / "scenarios" / "test_incident.json"
+        )
+        scenario = json.loads(scenario_file.read_text(encoding="utf-8"))
+
+        results = [
+            normalize_event({
+                "source": "blackbox_simulator",
+                "timestamp": "2026-11-10T12:00:00Z",
+                "event_type": event["event_type"],
+                "severity": event["severity"],
+                "data": {
+                    **event["data"],
+                    "scenario_id": scenario["scenario_id"],
+                    "synthetic": True,
+                },
+            })
+            for event in scenario["events"]
+        ]
+
+        chain = [
+            (r["process"]["name"], r["process"]["pid"],
+             r["process"]["parent_pid"])
+            for r in results[:3]
+        ]
+        self.assertEqual(chain, [
+            ("bash", 1000, 900),
+            ("python3", 1100, 1000),
+            ("curl", 1200, 1100),
+        ])
+
+        network = results[3]
+        self.assertEqual(network["process"]["name"], "curl")
+        self.assertEqual(network["network"]["destination_ip"], "192.0.2.10")
+        self.assertEqual(network["network"]["destination_port"], 80)
+        self.assertTrue(all(r["scenario_id"] == "BB-001" for r in results))
+
+    def test_top_level_name_is_not_process_name(self):
+        raw = {
+            "timestamp": "2026-11-10T12:00:00Z",
+            "event_type": "network_connection",
+            "data": {"name": "BB-001 scenario"},
+        }
+
+        self.assertIsNone(normalize_event(raw)["process"]["name"])
 
     def test_missing_event_type(self):
         raw = {
