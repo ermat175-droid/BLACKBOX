@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from typing import Any, Iterable
+from urllib.parse import unquote
 
 # How long after an HTTP request a spawned process may appear and still be
 # attributed to that request (seconds).
@@ -80,6 +81,24 @@ def _edge(src: str, dst: str, kind: str, reason: str) -> dict:
     return {"source": src, "target": dst, "kind": kind, "reason": reason}
 
 
+def _shares_command(decoded_path: str, command_line: str) -> bool:
+    """True if the request path carried the process command (web shell).
+
+    Compares on a distinctive slice of the command so that a short,
+    common command does not match unrelated requests.
+    """
+    cmd = command_line.strip()
+    # drop a leading "sh -c" / "/bin/sh -c" wrapper to reach the payload
+    for prefix in ("/bin/sh -c", "sh -c", "/bin/bash -c", "bash -c"):
+        if cmd.startswith(prefix):
+            cmd = cmd[len(prefix):]
+            break
+    # strip residual separators and quoting around the real command
+    cmd = cmd.strip().lstrip("-").strip().strip("\"'").strip()
+    probe = cmd[:24]
+    return len(probe) >= 4 and probe in decoded_path
+
+
 def correlate(events: Iterable[dict]) -> dict[str, Any]:
     """Build an incident graph from normalized events.
 
@@ -115,31 +134,60 @@ def correlate(events: Iterable[dict]) -> dict[str, Any]:
                 f"parent_pid {p['parent_pid']} == pid of {parent['process']['name']}",
             ))
 
-    # --- http request nodes + spawned_by edges ---
     for req in https:
         nodes.append(_http_node(req))
-        req_t = _ts(req)
-        container = req.get("hostname")
 
-        # candidate processes: same container, started within the window
-        # after the request, that are not the web server itself.
-        best = None
-        for e in processes:
-            if e.get("hostname") != container:
-                continue
-            name = e["process"]["name"]
-            if name in WEB_SERVER_NAMES:
-                continue
-            delta = (_ts(e) - req_t).total_seconds()
-            if 0 <= delta <= HTTP_SPAWN_WINDOW_S:
-                if best is None or _ts(e) < _ts(best):
-                    best = e
-        if best is not None:
-            edges.append(_edge(
-                _node_id(req), _node_id(best), "spawned_by",
-                f"process started {(_ts(best) - req_t).total_seconds():.2f}s "
-                f"after request, same container",
-            ))
+    # --- spawned_by edges ---
+    # A process is attributed to an HTTP request only when its *parent* is
+    # the web server (so it was spawned while handling a request), and then
+    # to the most recent request before it in the same container. This
+    # avoids the false matches a pure time window produces when many
+    # requests (e.g. blind SQLi) happen in the same seconds.
+    https_by_container: dict[str | None, list[dict]] = {}
+    for req in https:
+        https_by_container.setdefault(req.get("hostname"), []).append(req)
+
+    for e in processes:
+        if e["process"].get("parent_name") not in WEB_SERVER_NAMES:
+            continue
+        proc_t = _ts(e)
+        container = e.get("hostname")
+
+        cmd = (e["process"].get("command_line") or "").strip()
+
+        in_window = []
+        for req in https_by_container.get(container, []):
+            delta = (proc_t - _ts(req)).total_seconds()
+            # allow a small negative slack: Apache logs at 1s resolution,
+            # so the triggering request can share the process's second.
+            if -1.0 <= delta <= HTTP_SPAWN_WINDOW_S:
+                in_window.append(req)
+
+        if not in_window:
+            continue
+
+        # Strongest signal: the request that carried the command (e.g. a
+        # web shell ?c=<cmd>) — its decoded path contains the command line.
+        content_match = None
+        if cmd:
+            for req in in_window:
+                decoded = unquote(req["http"].get("path") or "")
+                if _shares_command(decoded, cmd):
+                    content_match = req
+                    break
+
+        if content_match is not None:
+            candidate, how = content_match, "carried the command"
+        else:
+            # Fall back to the most recent request in the window.
+            candidate = max(in_window, key=_ts)
+            how = (f"spawned by web server "
+                   f"{(proc_t - _ts(candidate)).total_seconds():.2f}s after it")
+
+        edges.append(_edge(
+            _node_id(candidate), _node_id(e), "spawned_by",
+            f"{e['process']['name']} {how}",
+        ))
 
     # --- network nodes + connected_to edges ---
     for net in networks:

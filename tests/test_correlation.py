@@ -22,7 +22,7 @@ def http(path, ts, eid):
     })
 
 
-def proc(name, pid, ppid, ts, eid):
+def proc(name, pid, ppid, ts, eid, parent_name=None):
     return normalize_event({
         "event_id": eid,
         "source": "tetragon",
@@ -36,6 +36,7 @@ def proc(name, pid, ppid, ts, eid):
             "pid": pid,
             "parent_pid": ppid,
             "command_line": name,
+            "parent_process_name": parent_name,
         },
     })
 
@@ -80,7 +81,8 @@ class TestCorrelation(unittest.TestCase):
         events = [
             http("/upload.phtml", "2026-11-10T12:00:00Z", "h1"),
             proc("apache2", 10, 1, "2026-11-10T11:59:00Z", "p-apache"),
-            proc("sh", 100, 10, "2026-11-10T12:00:01Z", "p-sh"),
+            proc("sh", 100, 10, "2026-11-10T12:00:01Z", "p-sh",
+                 parent_name="apache2"),
         ]
         graph = correlate(events)
         spawned = self._edges(graph, "spawned_by")
@@ -88,11 +90,32 @@ class TestCorrelation(unittest.TestCase):
         self.assertEqual(spawned[0]["source"], "h1")
         self.assertEqual(spawned[0]["target"], "p-sh")
 
-    def test_http_does_not_match_webserver_or_outside_window(self):
+    def test_only_most_recent_request_matches_amid_many(self):
+        """Blind-SQLi burst must not create false spawn edges."""
+        events = [
+            http("/sqli?order=1", "2026-11-10T12:00:00Z", "h1"),
+            http("/sqli?order=2", "2026-11-10T12:00:01Z", "h2"),
+            http("/shell.phtml?c=id", "2026-11-10T12:00:02Z", "h3"),
+            proc("sh", 100, 10, "2026-11-10T12:00:02Z", "p-sh",
+                 parent_name="apache2"),
+        ]
+        spawned = self._edges(correlate(events), "spawned_by")
+        self.assertEqual(len(spawned), 1)
+        self.assertEqual(spawned[0]["source"], "h3")
+
+    def test_non_webserver_child_is_not_attributed(self):
         events = [
             http("/", "2026-11-10T12:00:00Z", "h1"),
-            proc("apache2", 10, 1, "2026-11-10T12:00:01Z", "p-apache"),
-            proc("sh", 100, 10, "2026-11-10T12:00:30Z", "p-late"),
+            proc("sh", 100, 10, "2026-11-10T12:00:01Z", "p-sh",
+                 parent_name="sh"),
+        ]
+        self.assertEqual(self._edges(correlate(events), "spawned_by"), [])
+
+    def test_http_does_not_match_outside_window(self):
+        events = [
+            http("/", "2026-11-10T12:00:00Z", "h1"),
+            proc("sh", 100, 10, "2026-11-10T12:00:30Z", "p-late",
+                 parent_name="apache2"),
         ]
         graph = correlate(events)
         self.assertEqual(self._edges(graph, "spawned_by"), [])
@@ -121,6 +144,30 @@ class TestCorrelation(unittest.TestCase):
         self.assertTrue(all(e["reason"] for e in graph["edges"]))
         # the http request and the apache root are not spawned by anything
         self.assertIn("h1", graph["roots"])
+
+
+if __name__ == "__main__":
+    unittest.main()
+
+
+class TestSpawnContentMatch(unittest.TestCase):
+
+    def test_prefers_request_that_carried_command(self):
+        # Two requests in the same second; only one carries the command.
+        cmd = "cat /root/flag.txt > /tmp/out"
+        events = [
+            http("/sqli?order=99", "2026-11-10T12:00:02Z", "h-sqli"),
+            http(f"/shell.phtml?c={cmd.replace(' ', '%20')}",
+                 "2026-11-10T12:00:02Z", "h-shell"),
+            proc("sh", 100, 10, "2026-11-10T12:00:02Z", "p-sh",
+                 parent_name="apache2"),
+        ]
+        events[2]["process"]["command_line"] = f"/bin/sh -c -- {cmd}"
+        spawned = [e for e in correlate(events)["edges"]
+                   if e["kind"] == "spawned_by"]
+        self.assertEqual(len(spawned), 1)
+        self.assertEqual(spawned[0]["source"], "h-shell")
+        self.assertIn("carried the command", spawned[0]["reason"])
 
 
 if __name__ == "__main__":

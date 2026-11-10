@@ -8,6 +8,7 @@ class ProcessInfo(BaseModel):
     pid: int | None = None
     parent_pid: int | None = None
     command_line: str | None = None
+    parent_name: str | None = None
 
 
 class NetworkInfo(BaseModel):

@@ -29,6 +29,23 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 # 172.17.0.1 - - [10/Nov/2026:14:45:37 +0000] "GET /x HTTP/1.1" 200 4464 "-" "curl/8.23.0"
+# Tetragon reports containers by the first 12 chars of their id; the HTTP
+# collector must use the same key so events from both streams correlate.
+ID_LEN = 12
+
+
+def resolve_container_id(name: str) -> str:
+    """Return the 12-char container id for a name, or the name itself."""
+    try:
+        full = subprocess.check_output(
+            ["docker", "inspect", "--format", "{{.Id}}", name],
+            text=True, stderr=subprocess.DEVNULL,
+        ).strip()
+        return full[:ID_LEN] if full else name
+    except subprocess.CalledProcessError:
+        return name
+
+
 COMBINED_RE = re.compile(
     r'^(?P<ip>\S+) \S+ \S+ \[(?P<time>[^\]]+)\] '
     r'"(?P<method>\S+) (?P<path>\S+) (?P<proto>[^"]*)" '
@@ -124,9 +141,10 @@ def stream_log_lines(container: str, since: str):
 
 def run(args: argparse.Namespace) -> None:
     sent = 0
+    container_id = resolve_container_id(args.container)
     print(
         f"[*] HTTP collector online | container={args.container} "
-        f"| api={args.api}",
+        f"(id {container_id}) | api={args.api}",
         flush=True,
     )
 
@@ -135,7 +153,7 @@ def run(args: argparse.Namespace) -> None:
         if fields is None:
             continue
 
-        event = map_line(fields, args.container, args.scenario)
+        event = map_line(fields, container_id, args.scenario)
         ok, detail = send_event(args.api, event)
         if ok:
             sent += 1

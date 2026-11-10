@@ -133,6 +133,9 @@ def normalize_event(raw: dict) -> dict:
             "command_line": _pick(
                 sources, "command_line", "cmdline", "command"
             ),
+            "parent_name": _pick(
+                sources, "parent_process_name", "parent_name"
+            ),
         },
 
         "network": {
