@@ -17,6 +17,13 @@ class NetworkInfo(BaseModel):
     protocol: str | None = None
 
 
+class HttpInfo(BaseModel):
+    method: str | None = None
+    path: str | None = None
+    status: int | None = None
+    user_agent: str | None = None
+
+
 class NormalizedEvent(BaseModel):
     schema_version: str
     event_id: str
@@ -29,6 +36,7 @@ class NormalizedEvent(BaseModel):
     severity: str
     process: ProcessInfo
     network: NetworkInfo
+    http: HttpInfo
     raw_data: dict[str, Any]
 
 

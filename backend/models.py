@@ -42,5 +42,9 @@ class Event(Base):
     destination_ip: Mapped[str | None] = mapped_column(String(45), index=True)
     destination_port: Mapped[int | None] = mapped_column(Integer)
 
+    http_method: Mapped[str | None] = mapped_column(String(10))
+    http_path: Mapped[str | None] = mapped_column(String(2048), index=True)
+    http_status: Mapped[int | None] = mapped_column(Integer)
+
     normalized: Mapped[dict] = mapped_column(JSON)
     raw_data: Mapped[dict] = mapped_column(JSON)

@@ -73,6 +73,7 @@ def create_event(
 
     process = normalized["process"]
     network = normalized["network"]
+    http = normalized["http"]
 
     event = Event(
         event_id=normalized["event_id"],
@@ -88,6 +89,9 @@ def create_event(
         parent_pid=process["parent_pid"],
         destination_ip=network["destination_ip"],
         destination_port=network["destination_port"],
+        http_method=http["method"],
+        http_path=http["path"],
+        http_status=http["status"],
         normalized=normalized,
         raw_data=raw,
     )

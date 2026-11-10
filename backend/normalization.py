@@ -96,6 +96,10 @@ def normalize_event(raw: dict) -> dict:
 
     protocol = _pick(sources, "protocol", "Protocol")
 
+    http_method = _pick(sources, "http_method", "method")
+    http_path = _pick(sources, "http_path", "path", "uri", "url")
+    http_status = _pick(sources, "http_status", "status", "status_code")
+
     return {
         "schema_version": "1.0",
         "event_id": str(event_id or uuid4()),
@@ -143,6 +147,13 @@ def normalize_event(raw: dict) -> dict:
                 "destination_port"
             ),
             "protocol": str(protocol).upper() if protocol is not None else None,
+        },
+
+        "http": {
+            "method": str(http_method).upper() if http_method else None,
+            "path": http_path,
+            "status": _to_int(http_status, "http_status"),
+            "user_agent": _pick(sources, "user_agent", "useragent", "ua"),
         },
 
         "raw_data": raw,
