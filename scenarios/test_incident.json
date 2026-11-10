@@ -1,0 +1,47 @@
+{
+  "scenario_id": "BB-001",
+  "name": "Suspicious Process Chain",
+  "description": "Synthetic incident for testing event ingestion",
+  "events": [
+    {
+      "event_type": "process_created",
+      "severity": "info",
+      "data": {
+        "process": "bash",
+        "pid": 1000,
+        "parent_pid": 900,
+        "command_line": "bash"
+      }
+    },
+    {
+      "event_type": "process_created",
+      "severity": "info",
+      "data": {
+        "process": "python3",
+        "pid": 1100,
+        "parent_pid": 1000,
+        "command_line": "python3 analysis.py"
+      }
+    },
+    {
+      "event_type": "process_created",
+      "severity": "warning",
+      "data": {
+        "process": "curl",
+        "pid": 1200,
+        "parent_pid": 1100,
+        "command_line": "curl http://192.0.2.10/test"
+      }
+    },
+    {
+      "event_type": "network_connection",
+      "severity": "warning",
+      "data": {
+        "source_process": "curl",
+        "destination_ip": "192.0.2.10",
+        "destination_port": 80,
+        "protocol": "TCP"
+      }
+    }
+  ]
+}
