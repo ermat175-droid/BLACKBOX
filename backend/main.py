@@ -6,6 +6,7 @@ from fastapi import Body, Depends, FastAPI, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from backend.correlation import correlate
 from backend.database import Base, SessionLocal, engine
 from backend.models import Event
 from backend.normalization import normalize_event
@@ -134,3 +135,24 @@ def get_event(event_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Event not found")
 
     return to_response(event)
+
+
+@app.get("/incidents/{scenario_id}/graph")
+def incident_graph(scenario_id: str, db: Session = Depends(get_db)):
+    query = (
+        select(Event)
+        .where(Event.scenario_id == scenario_id)
+        .order_by(Event.timestamp, Event.id)
+    )
+    events = [event.normalized for event in db.scalars(query)]
+
+    if not events:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No events for scenario {scenario_id}"
+        )
+
+    graph = correlate(events)
+    graph["scenario_id"] = scenario_id
+    graph["event_count"] = len(events)
+    return graph
