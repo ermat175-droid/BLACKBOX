@@ -354,7 +354,21 @@ def sensor_start() -> dict:
             if add.returncode == 0:
                 break
             time.sleep(1)
+
+    # The sensor may come up *after* targets are already running; attach
+    # process/network telemetry to them now so start order doesn't matter.
+    reattach_running_targets()
     return sensor_status()
+
+
+def reattach_running_targets() -> list[str]:
+    """(Re)start collectors for every running target. Returns their ids."""
+    reattached = []
+    for t in _load():
+        if _container_state(t["container"]) == "running":
+            _start_collectors(t, _container_id(t["container"]))
+            reattached.append(t["id"])
+    return reattached
 
 
 def sensor_stop() -> dict:
