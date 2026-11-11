@@ -48,3 +48,9 @@ class Event(Base):
 
     normalized: Mapped[dict] = mapped_column(JSON)
     raw_data: Mapped[dict] = mapped_column(JSON)
+
+    # Tamper-evident chain of custody (see backend.integrity). Set on insert
+    # in ingestion order: chain_hash links this event to the previous one.
+    content_hash: Mapped[str | None] = mapped_column(String(64))
+    prev_hash: Mapped[str | None] = mapped_column(String(64))
+    chain_hash: Mapped[str | None] = mapped_column(String(64), index=True)

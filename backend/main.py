@@ -12,6 +12,7 @@ STATIC_DIR = Path(__file__).resolve().parent / "static"
 
 from backend.correlation import correlate
 from backend.database import Base, SessionLocal, engine
+from backend.integrity import GENESIS, link, verify_chain
 from backend.models import Event
 from backend.normalization import normalize_event
 from backend.reconstruction import reconstruct
@@ -127,6 +128,15 @@ def create_event(
         raw_data=raw,
     )
 
+    # Append to the tamper-evident chain of custody (ingestion order).
+    prev_hash = db.scalar(
+        select(Event.chain_hash).order_by(Event.id.desc()).limit(1)
+    ) or GENESIS
+    content, chain = link(prev_hash, normalized)
+    event.content_hash = content
+    event.prev_hash = prev_hash
+    event.chain_hash = chain
+
     db.add(event)
     db.commit()
     db.refresh(event)
@@ -186,6 +196,79 @@ def incident_graph(scenario_id: str, db: Session = Depends(get_db)):
     graph["scenario_id"] = scenario_id
     graph["event_count"] = len(events)
     return graph
+
+
+@app.get("/integrity")
+def integrity(db: Session = Depends(get_db)):
+    """Verify the tamper-evident chain of custody over all stored events."""
+    rows = list(db.scalars(select(Event).order_by(Event.id)))
+    result = verify_chain(rows)
+    result["genesis"] = GENESIS
+    return result
+
+
+def _event_label(e: dict) -> str:
+    """Short human label for a timeline row."""
+    if e["event_type"] == "http_request":
+        h = e.get("http") or {}
+        return f"{h.get('method') or ''} {h.get('path') or ''}".strip()
+    if e["event_type"] == "network_connection":
+        n = e.get("network") or {}
+        return f"{n.get('destination_ip')}:{n.get('destination_port')}"
+    p = e.get("process") or {}
+    pid = p.get("pid")
+    return f"{p.get('name') or '?'}" + (f" (pid {pid})" if pid else "")
+
+
+@app.get("/incidents/{scenario_id}/timeline")
+def incident_timeline(scenario_id: str, db: Session = Depends(get_db)):
+    rows = list(
+        db.scalars(
+            select(Event)
+            .where(Event.scenario_id == scenario_id)
+            .order_by(Event.timestamp, Event.id)
+        )
+    )
+    if not rows:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No events for scenario {scenario_id}"
+        )
+
+    events = [r.normalized for r in rows]
+    graph = correlate(events)
+    recon = reconstruct(events, graph)
+
+    # event_id -> stages it is evidence for, and a representative confidence.
+    stage_of: dict[str, list[dict]] = {}
+    for stage in recon["stages"]:
+        for eid in stage["evidence"]:
+            stage_of.setdefault(eid, []).append(
+                {"key": stage["key"], "order": stage["order"],
+                 "confidence": stage["confidence"]}
+            )
+
+    entries = []
+    for r in rows:
+        e = r.normalized
+        eid = e["event_id"]
+        entries.append({
+            "event_id": eid,
+            "timestamp": e["timestamp"],
+            "event_type": e["event_type"],
+            "severity": e.get("severity"),
+            "source": e.get("source"),
+            "label": _event_label(e),
+            "stages": stage_of.get(eid, []),
+            "chain_hash": r.chain_hash,
+        })
+
+    return {
+        "scenario_id": scenario_id,
+        "event_count": len(entries),
+        "stage_count": recon["stage_count"],
+        "entries": entries,
+    }
 
 
 @app.get("/incidents/{scenario_id}/reconstruction")
