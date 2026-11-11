@@ -17,6 +17,7 @@ from backend.models import Event
 from backend.normalization import normalize_event
 from backend.reconstruction import reconstruct
 from backend.schemas import EventResponse
+from backend import targets as targets_mod
 
 
 @asynccontextmanager
@@ -291,6 +292,61 @@ def incident_reconstruction(scenario_id: str, db: Session = Depends(get_db)):
     result["scenario_id"] = scenario_id
     result["event_count"] = len(events)
     return result
+
+
+# --- Target Manager: load / run / monitor sandboxed attack targets ---------
+def _target_or_400(fn, *args):
+    try:
+        return fn(*args)
+    except targets_mod.TargetError as error:
+        raise HTTPException(status_code=400, detail=str(error))
+
+
+@app.get("/targets")
+def targets_list():
+    return _target_or_400(targets_mod.list_targets)
+
+
+@app.post("/targets", status_code=201)
+def targets_add(body: dict[str, Any] = Body(...)):
+    name = body.get("name")
+    source = body.get("source")
+    if not name or source is None:
+        raise HTTPException(status_code=422, detail="name and source are required")
+    return _target_or_400(
+        targets_mod.add_target, name, source,
+        body.get("container_port", 80), body.get("host_port"),
+    )
+
+
+@app.post("/targets/{target_id}/start")
+def targets_start(target_id: str):
+    return _target_or_400(targets_mod.start_target, target_id)
+
+
+@app.post("/targets/{target_id}/stop")
+def targets_stop(target_id: str):
+    return _target_or_400(targets_mod.stop_target, target_id)
+
+
+@app.delete("/targets/{target_id}", status_code=204)
+def targets_remove(target_id: str):
+    _target_or_400(targets_mod.remove_target, target_id)
+
+
+@app.get("/sensor")
+def sensor_status():
+    return _target_or_400(targets_mod.sensor_status)
+
+
+@app.post("/sensor/start")
+def sensor_start():
+    return _target_or_400(targets_mod.sensor_start)
+
+
+@app.post("/sensor/stop")
+def sensor_stop():
+    return _target_or_400(targets_mod.sensor_stop)
 
 
 # The web UI is served at /ui (mounted last so it never shadows the API).

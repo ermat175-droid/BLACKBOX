@@ -3,3 +3,4 @@ __pycache__/
 *.pyc
 blackbox.db
 .env
+targets.json
