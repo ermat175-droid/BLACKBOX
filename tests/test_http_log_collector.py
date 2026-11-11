@@ -12,6 +12,12 @@ NOTICE = (
     "[Tue Nov 10 14:39:58.257520 2026] [mpm_prefork:notice] "
     "[pid 25:tid 25] AH00163: Apache configured"
 )
+# uvicorn / FastAPI default access line (no timestamp), carrying an SSTI payload
+UVICORN = (
+    'INFO:     172.18.0.1:49976 - "GET /export/generate-pdf?report_title='
+    '%7B%7B+self.__init__.__globals__+%7D%7D HTTP/1.1" 200 OK'
+)
+UVICORN_STARTUP = "INFO:     Application startup complete."
 
 
 class TestHttpLogCollector(unittest.TestCase):
@@ -50,6 +56,28 @@ class TestHttpLogCollector(unittest.TestCase):
         line = ACCESS.replace('" 200 ', '" 500 ')
         event = map_line(parse_line(line), "bb-portal", "BB-M1")
         self.assertEqual(event["severity"], "warning")
+
+    def test_parses_uvicorn_line(self):
+        fields = parse_line(UVICORN)
+        self.assertIsNotNone(fields)
+        self.assertEqual(fields["fmt"], "uvicorn")
+        self.assertEqual(fields["ip"], "172.18.0.1")
+        self.assertEqual(fields["method"], "GET")
+        self.assertIn("generate-pdf", fields["path"])
+        self.assertEqual(fields["status"], "200")
+
+    def test_uvicorn_startup_line_ignored(self):
+        self.assertIsNone(parse_line(UVICORN_STARTUP))
+
+    def test_uvicorn_maps_and_normalizes(self):
+        event = map_line(parse_line(UVICORN), "bb-test", "TGT-test")
+        self.assertEqual(event["source"], "uvicorn")
+        norm = normalize_event(event)
+        self.assertEqual(norm["http"]["method"], "GET")
+        self.assertIn("generate-pdf", norm["http"]["path"])
+        self.assertEqual(norm["network"]["source_ip"], "172.18.0.1")
+        # no timestamp in the line -> a valid receipt timestamp is filled in
+        self.assertTrue(norm["timestamp"])
 
 
 if __name__ == "__main__":

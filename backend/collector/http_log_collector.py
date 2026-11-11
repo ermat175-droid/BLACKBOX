@@ -1,9 +1,18 @@
 #!/usr/bin/env python3
-"""Apache (combined log) -> BLACKBOX collector.
+"""HTTP access-log -> BLACKBOX collector.
 
-Follows a lab container's stdout, parses Apache "combined" access-log
-lines and forwards each HTTP request to the BLACKBOX ingestion API as an
-`http_request` event. Apache notice/error lines are ignored.
+Follows a lab container's stdout/stderr, recognizes an access-log line in
+one of several server formats, and forwards each HTTP request to the
+BLACKBOX ingestion API as an `http_request` event. Non-request lines are
+ignored.
+
+Supported formats (auto-detected per line):
+* Apache / nginx "combined" (ip, time, request, status, referer, UA);
+* uvicorn / FastAPI default ("INFO:  ip:port - \"GET /x HTTP/1.1\" 200 OK").
+
+A line in a format with no timestamp is stamped with the collector's own
+receipt time (the same clock the Tetragon collector uses), so the two
+streams stay correlatable.
 
 Read-only observer: it only reads `docker logs`, never touches the
 container.
@@ -24,11 +33,10 @@ import os
 import re
 import subprocess
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
-# 172.17.0.1 - - [10/Nov/2026:14:45:37 +0000] "GET /x HTTP/1.1" 200 4464 "-" "curl/8.23.0"
 # Tetragon reports containers by the first 12 chars of their id; the HTTP
 # collector must use the same key so events from both streams correlate.
 ID_LEN = 12
@@ -46,21 +54,54 @@ def resolve_container_id(name: str) -> str:
         return name
 
 
+# Apache / nginx combined:
+# 172.17.0.1 - - [10/Nov/2026:14:45:37 +0000] "GET /x HTTP/1.1" 200 4464 "-" "curl/8.23.0"
 COMBINED_RE = re.compile(
     r'^(?P<ip>\S+) \S+ \S+ \[(?P<time>[^\]]+)\] '
-    r'"(?P<method>\S+) (?P<path>\S+) (?P<proto>[^"]*)" '
+    r'"(?P<method>[A-Z]+) (?P<path>\S+) (?P<proto>[^"]*)" '
     r'(?P<status>\d{3}) (?P<size>\S+) '
     r'"(?P<referer>[^"]*)" "(?P<ua>[^"]*)"'
+)
+
+# uvicorn / FastAPI default access log (no timestamp in the line):
+# INFO:     172.18.0.1:49976 - "GET /x?y HTTP/1.1" 200 OK
+UVICORN_RE = re.compile(
+    r'^INFO:\s+(?P<ip>\d{1,3}(?:\.\d{1,3}){3}):\d+ - '
+    r'"(?P<method>[A-Z]+) (?P<path>\S+) [^"]*" (?P<status>\d{3})'
 )
 
 APACHE_TIME_FMT = "%d/%b/%Y:%H:%M:%S %z"
 
 
-def parse_line(line: str) -> dict | None:
-    match = COMBINED_RE.match(line.strip())
-    if match is None:
+def _parse_combined(line: str) -> dict | None:
+    m = COMBINED_RE.match(line)
+    if m is None:
         return None
-    return match.groupdict()
+    f = m.groupdict()
+    f["fmt"] = "apache"
+    return f
+
+
+def _parse_uvicorn(line: str) -> dict | None:
+    m = UVICORN_RE.match(line)
+    if m is None:
+        return None
+    f = m.groupdict()
+    f["fmt"] = "uvicorn"
+    return f  # no time / referer / ua in this format
+
+
+# Tried in order; first match wins.
+PARSERS = (_parse_combined, _parse_uvicorn)
+
+
+def parse_line(line: str) -> dict | None:
+    line = line.strip()
+    for parser in PARSERS:
+        fields = parser(line)
+        if fields is not None:
+            return fields
+    return None
 
 
 def _iso_time(apache_time: str) -> str:
@@ -68,12 +109,19 @@ def _iso_time(apache_time: str) -> str:
 
 
 def map_line(fields: dict, container: str, scenario_id: str | None) -> dict:
-    timestamp = _iso_time(fields["time"])
+    # Formats without a timestamp (e.g. uvicorn) are stamped with the
+    # collector's receipt time, on the same clock as the Tetragon collector.
+    log_time = fields.get("time")
+    if log_time:
+        timestamp = _iso_time(log_time)
+        id_basis = log_time
+    else:
+        timestamp = datetime.now(timezone.utc).isoformat()
+        id_basis = timestamp  # microsecond-precision: keeps repeats distinct
 
-    # Combined logs have no unique id; derive a stable one so replays of the
-    # same log don't create duplicates.
+    # No unique id in a log line; derive a stable one from its content.
     fingerprint = "|".join([
-        container, fields["time"], fields["ip"],
+        container, id_basis, fields["ip"],
         fields["method"], fields["path"], fields["status"],
     ])
     event_id = "http-" + hashlib.sha1(fingerprint.encode()).hexdigest()[:24]
@@ -83,7 +131,7 @@ def map_line(fields: dict, container: str, scenario_id: str | None) -> dict:
 
     return {
         "event_id": event_id,
-        "source": "apache",
+        "source": fields.get("fmt", "http"),
         "event_type": "http_request",
         "timestamp": timestamp,
         "severity": severity,
@@ -95,8 +143,8 @@ def map_line(fields: dict, container: str, scenario_id: str | None) -> dict:
             "http_method": fields["method"],
             "http_path": fields["path"],
             "http_status": status,
-            "user_agent": fields["ua"],
-            "referer": fields["referer"],
+            "user_agent": fields.get("ua"),
+            "referer": fields.get("referer"),
         },
     }
 
@@ -170,7 +218,7 @@ def run(args: argparse.Namespace) -> None:
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Apache log -> BLACKBOX collector")
+    parser = argparse.ArgumentParser(description="HTTP access-log -> BLACKBOX collector")
     parser.add_argument("--container", required=True,
                         help="Name of the lab container to follow")
     parser.add_argument("--scenario", default=None,

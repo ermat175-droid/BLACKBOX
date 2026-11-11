@@ -23,7 +23,10 @@ from urllib.parse import unquote
 HTTP_SPAWN_WINDOW_S = 5.0
 
 # Process names that are the web server itself, not attacker-spawned work.
-WEB_SERVER_NAMES = {"apache2", "httpd", "nginx", "php-fpm", "node", "python3"}
+WEB_SERVER_NAMES = {
+    "apache2", "httpd", "nginx", "php-fpm", "node", "python3",
+    "uvicorn", "gunicorn", "hypercorn", "flask", "waitress",
+}
 
 
 def _ts(event: dict) -> datetime:
