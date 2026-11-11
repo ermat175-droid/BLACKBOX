@@ -367,6 +367,7 @@ const I18N = {
     view_graph: "Graph", view_timeline: "Timeline", integrity: "Evidence integrity",
     integrity_verified: "verified", integrity_broken: "TAMPERED", integrity_head: "head",
     nav_targets: "Targets ▸",
+    graph_empty_hint: "Nothing correlated to show in Focus. Start the capture engine before attacking (for process telemetry), or turn off Focus to see all requests.",
   },
   ru: {
     subtitle: "/ консоль расследования", case: "Дело", reconstruction: "Реконструкция",
@@ -391,6 +392,7 @@ const I18N = {
     view_graph: "Граф", view_timeline: "Таймлайн", integrity: "Целостность доказательств",
     integrity_verified: "подтверждена", integrity_broken: "НАРУШЕНА", integrity_head: "голова",
     nav_targets: "Цели ▸",
+    graph_empty_hint: "В «Фокусе» нет связанной активности. Запустите движок захвата до атаки (для телеметрии процессов) или снимите «Фокус», чтобы увидеть все запросы.",
   },
   kz: {
     subtitle: "/ тергеу консолі", case: "Іс", reconstruction: "Қайта құру",
@@ -415,6 +417,7 @@ const I18N = {
     view_graph: "Граф", view_timeline: "Уақыт сызбасы", integrity: "Дәлелдер тұтастығы",
     integrity_verified: "расталған", integrity_broken: "БҰЗЫЛҒАН", integrity_head: "бас",
     nav_targets: "Нысандар ▸",
+    graph_empty_hint: "«Фокуста» байланысқан әрекет жоқ. Шабуылдан бұрын түсіру қозғалтқышын қосыңыз (процесс телеметриясы үшін) немесе барлық сұрауларды көру үшін «Фокусты» алыңыз.",
   },
 };
 let lang = localStorage.getItem('bb_lang') || 'ru';
@@ -579,6 +582,7 @@ function setView(v) {
   document.querySelector('.legend').style.display = v === 'graph' ? '' : 'none';
   $('#fit').style.display = v === 'graph' ? '' : 'none';
   document.querySelectorAll('#viewswitch button').forEach((b) => b.classList.toggle('on', b.dataset.view === v));
+  updateGraphEmpty();
   if (v === 'graph' && cy) { cy.resize(); cy.fit(undefined, 40); if (activeStage) highlightStage(activeStage); }
   if (v === 'timeline' && activeStage) markTimelineStage(activeStage);
 }
@@ -613,16 +617,30 @@ function renderStory() {
 }
 
 /* ---------- graph ---------- */
+let graphEmptyMsg = null;
+function updateGraphEmpty() {
+  const show = view === 'graph' && graphEmptyMsg;
+  const el = $('#graphEmpty');
+  el.style.display = show ? 'grid' : 'none';
+  if (show) el.textContent = graphEmptyMsg;
+}
 function renderGraph() {
   if (!graph) {
-    $('#graphEmpty').textContent = t('no_cases'); $('#graphEmpty').style.display = 'grid';
+    graphEmptyMsg = t('no_cases'); updateGraphEmpty();
     if (cy) { cy.destroy(); cy = null; } return;
   }
-  $('#graphEmpty').style.display = 'none';
   const connected = new Set();
   graph.edges.forEach((e) => { connected.add(e.source); connected.add(e.target); });
   const focus = $('#focus').checked;
   const nodes = graph.nodes.filter((n) => !focus || n.kind !== 'http_request' || connected.has(n.id));
+  // Empty after filtering: usually an HTTP-only case (no process telemetry).
+  if (nodes.length === 0) {
+    if (cy) { cy.destroy(); cy = null; }
+    graphEmptyMsg = graph.nodes.length ? t('graph_empty_hint') : t('no_cases');
+    updateGraphEmpty();
+    return;
+  }
+  graphEmptyMsg = null; updateGraphEmpty();
   const elements = [
     ...nodes.map((n) => ({ data: { ...n, short: shortLabel(n) } })),
     ...graph.edges.map((e, i) => ({ data: { id: `e${i}`, ...e } })),
