@@ -48,6 +48,12 @@ class TestPureHelpers(unittest.TestCase):
         # a lab target must be local; the sandbox must not reach a registry
         self.assertIn("--pull=never", tg.run_argv("bb-tgt-x", "img:latest", 8100, 80))
 
+    def test_exposed_ports_parsing(self):
+        self.assertEqual(tg._exposed_ports({"443/tcp": {}, "80/tcp": {}}), [80, 443])
+        self.assertEqual(tg._exposed_ports({"8080/tcp": {}, "8080/udp": {}}), [8080])
+        self.assertEqual(tg._exposed_ports(None), [])
+        self.assertEqual(tg._exposed_ports({}), [])
+
     def test_next_host_port_skips_used(self):
         reg = [{"host_port": 8100}, {"host_port": 8101}, {"host_port": 8103}]
         self.assertEqual(tg.next_host_port(reg), 8102)

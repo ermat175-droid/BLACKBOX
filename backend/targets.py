@@ -178,6 +178,49 @@ def sensor_running() -> bool:
     return _container_state(SENSOR_CONTAINER) == "running"
 
 
+def _exposed_ports(exposed: Any) -> list[int]:
+    """Port numbers from a docker ExposedPorts map ({'80/tcp': {}})."""
+    ports = []
+    for key in (exposed or {}):
+        try:
+            ports.append(int(str(key).split("/")[0]))
+        except ValueError:
+            continue
+    return sorted(set(ports))
+
+
+def list_local_images() -> list[dict]:
+    """Tagged Docker images on this host, each with its EXPOSEd ports.
+
+    Lets the UI offer a pick-list of what is actually present instead of a
+    free-text image name (no typos, and the container port can be
+    prefilled). Infra images (the sensor, our own built targets) are hidden.
+    """
+    r = _docker([DOCKER, "images", "--format", "{{.Repository}}:{{.Tag}}"], timeout=30)
+    if r.returncode != 0:
+        raise TargetError("cannot list docker images")
+    names = sorted({
+        ln.strip() for ln in r.stdout.splitlines()
+        if ln.strip() and "<none>" not in ln
+        and not ln.startswith(TENANT_PREFIX)
+        and not ln.startswith("quay.io/cilium/tetragon")
+    })
+
+    ports_by: dict[str, list[int]] = {}
+    if names:
+        ins = _docker([DOCKER, "image", "inspect", *names], timeout=60)
+        if ins.returncode == 0:
+            try:
+                for item in json.loads(ins.stdout):
+                    ep = _exposed_ports((item.get("Config") or {}).get("ExposedPorts"))
+                    for tag in (item.get("RepoTags") or []):
+                        ports_by[tag] = ep
+            except json.JSONDecodeError:
+                pass
+
+    return [{"name": n, "ports": ports_by.get(n, [])} for n in names]
+
+
 # --------------------------------------------------------------------------
 # public API
 # --------------------------------------------------------------------------

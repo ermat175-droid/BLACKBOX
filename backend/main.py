@@ -314,6 +314,11 @@ def _target_or_400(fn, *args):
         raise HTTPException(status_code=400, detail=str(error))
 
 
+@app.get("/docker/images")
+def docker_images():
+    return _target_or_400(targets_mod.list_local_images)
+
+
 @app.get("/targets")
 def targets_list():
     return _target_or_400(targets_mod.list_targets)

@@ -53,6 +53,9 @@
   label.f { display:flex; flex-direction:column; gap:4px; font-size:12px; color:var(--text-muted); }
   label.f input, label.f select { font:inherit; font-size:14px; background:var(--surface-2);
     color:var(--text-1); border:1px solid var(--border); border-radius:7px; padding:8px 10px; }
+  label.f .row { display:flex; gap:8px; align-items:stretch; }
+  label.f .row select { flex:1; }
+  label.f .row button { padding:0 11px; }
   .targets { display:flex; flex-direction:column; gap:12px; }
   .card { background:var(--surface-1); border:1px solid var(--border); border-radius:12px;
     padding:14px 16px; display:grid; grid-template-columns:1fr auto; gap:10px 16px; align-items:center; }
@@ -107,7 +110,10 @@
           <option value="build" data-i18n="type_build"></option>
         </select></label>
       <label class="f full" id="wrap_image"><span data-i18n="f_image"></span>
-        <input id="f_image" placeholder="ice-public-portal:latest"></label>
+        <div class="row">
+          <select id="f_image"></select>
+          <button type="button" id="f_image_refresh" title="refresh">↻</button>
+        </div></label>
       <label class="f full" id="wrap_path" hidden><span data-i18n="f_path"></span>
         <input id="f_path" placeholder="~/sites/myapp"></label>
       <label class="f"><span data-i18n="f_cport"></span>
@@ -142,6 +148,7 @@ const I18N = {
     b_start:"Start", b_stop:"Stop", b_delete:"Delete", b_open:"Open case ▸",
     st_run:"running", st_stop:"stopped", st_err:"error",
     working:"working…", confirm_del:"Delete this target?",
+    img_pick:"— choose an image —", img_none:"no local images found",
   },
   ru: { subtitle:"/ загрузка целей", nav_console:"◂ Консоль",
     safety:"Цели специально уязвимы. Они всегда публикуются только на 127.0.0.1. Чтобы атаковать с другого ноута — выделенная изолированная сеть без выхода в интернет, никогда не обычный Wi-Fi.",
@@ -157,6 +164,7 @@ const I18N = {
     b_start:"Запустить", b_stop:"Остановить", b_delete:"Удалить", b_open:"Открыть дело ▸",
     st_run:"запущена", st_stop:"остановлена", st_err:"ошибка",
     working:"выполняется…", confirm_del:"Удалить эту цель?",
+    img_pick:"— выберите образ —", img_none:"локальных образов не найдено",
   },
   kz: { subtitle:"/ нысандарды жүктеу", nav_console:"◂ Консоль",
     safety:"Нысандар әдейі осал. Олар әрқашан тек 127.0.0.1-де жарияланады. Басқа ноутбуктан шабуылдау үшін — интернетсіз оқшауланған жеке желі, ешқашан әдеттегі Wi-Fi емес.",
@@ -172,6 +180,7 @@ const I18N = {
     b_start:"Қосу", b_stop:"Тоқтату", b_delete:"Жою", b_open:"Істі ашу ▸",
     st_run:"қосулы", st_stop:"тоқтатылған", st_err:"қате",
     working:"орындалуда…", confirm_del:"Бұл нысанды жою керек пе?",
+    img_pick:"— образды таңдаңыз —", img_none:"жергілікті образдар табылмады",
   },
 };
 let lang = localStorage.getItem('bb_lang') || 'ru'; if (!I18N[lang]) lang = 'en';
@@ -250,6 +259,31 @@ async function onAction(e) {
   } catch (err) { toast(err.message, true); btn.disabled = false; btn.textContent = old; }
 }
 
+let imagePorts = {};
+async function loadImages() {
+  const sel = $('#f_image');
+  let imgs = [];
+  try { imgs = await api('GET', '/docker/images'); } catch (e) { toast(e.message, true); }
+  imagePorts = {}; sel.innerHTML = '';
+  if (!imgs.length) {
+    const o = document.createElement('option'); o.value=''; o.disabled=true;
+    o.textContent = t('img_none'); sel.appendChild(o); return;
+  }
+  const ph = document.createElement('option'); ph.value=''; ph.textContent = t('img_pick');
+  sel.appendChild(ph);
+  for (const i of imgs) {
+    imagePorts[i.name] = i.ports || [];
+    const o = document.createElement('option'); o.value = i.name;
+    o.textContent = (i.ports && i.ports.length) ? `${i.name}  ·  :${i.ports.join(', :')}` : i.name;
+    sel.appendChild(o);
+  }
+}
+$('#f_image').addEventListener('change', (e)=> {
+  const ports = imagePorts[e.target.value];
+  if (ports && ports.length) $('#f_cport').value = ports[0];
+});
+$('#f_image_refresh').addEventListener('click', loadImages);
+
 $('#f_type').addEventListener('change', (e)=> {
   const build = e.target.value === 'build';
   $('#wrap_image').hidden = build; $('#wrap_path').hidden = !build;
@@ -257,6 +291,7 @@ $('#f_type').addEventListener('change', (e)=> {
 $('#addForm').addEventListener('submit', async (e)=> {
   e.preventDefault();
   const type = $('#f_type').value;
+  if (type === 'image' && !$('#f_image').value) { toast(t('img_pick'), true); return; }
   const source = type === 'image'
     ? { type:'image', image: $('#f_image').value.trim() }
     : { type:'build', path: $('#f_path').value.trim() };
@@ -279,13 +314,13 @@ $('#engineBtn').addEventListener('click', async ()=> {
 $('#lang').addEventListener('click', (e)=> {
   const b = e.target.closest('button[data-lang]'); if (!b) return;
   lang = b.dataset.lang; localStorage.setItem('bb_lang', lang);
-  applyI18n(); renderSensor(); loadTargets();
+  applyI18n(); renderSensor(); loadTargets(); loadImages();
 });
 $('#theme').addEventListener('click', ()=> {
   const r = document.documentElement; r.dataset.theme = r.dataset.theme==='light' ? 'dark':'light';
 });
 
-(async function init(){ applyI18n(); await loadSensor(); await loadTargets(); })();
+(async function init(){ applyI18n(); await loadImages(); await loadSensor(); await loadTargets(); })();
 </script>
 </body>
 </html>
