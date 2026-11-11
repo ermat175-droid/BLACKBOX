@@ -44,6 +44,10 @@ class TestPureHelpers(unittest.TestCase):
         self.assertIn("127.0.0.1:8100:80", argv)
         self.assertNotIn("0.0.0.0:8100:80", " ".join(argv))
 
+    def test_run_argv_never_pulls(self):
+        # a lab target must be local; the sandbox must not reach a registry
+        self.assertIn("--pull=never", tg.run_argv("bb-tgt-x", "img:latest", 8100, 80))
+
     def test_next_host_port_skips_used(self):
         reg = [{"host_port": 8100}, {"host_port": 8101}, {"host_port": 8103}]
         self.assertEqual(tg.next_host_port(reg), 8102)

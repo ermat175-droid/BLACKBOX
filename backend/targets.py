@@ -107,9 +107,14 @@ def next_host_port(registry: list[dict], base: int = PORT_BASE) -> int:
 
 
 def run_argv(container: str, image: str, host_port: int, container_port: int) -> list[str]:
-    """docker argv to run a target, always bound to localhost."""
+    """docker argv to run a target, always bound to localhost.
+
+    ``--pull=never`` keeps the sandbox from reaching out to a registry: a
+    lab target must already be present locally, and a missing one fails fast
+    with a clear "image not found locally" instead of an internet pull.
+    """
     return [
-        DOCKER, "run", "-d", "--name", container,
+        DOCKER, "run", "-d", "--pull=never", "--name", container,
         "-p", f"{HOST_BIND}:{host_port}:{container_port}",
         image,
     ]
