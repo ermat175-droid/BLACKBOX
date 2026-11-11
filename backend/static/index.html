@@ -85,6 +85,19 @@
   .verdict .pill[data-c="low"]    { background: var(--c-low); }
   .verdict .pill[data-c="none"]   { background: var(--text-muted); }
   .verdict .counts { color: var(--text-2); font-variant-numeric: tabular-nums; }
+  .integrity { display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px;
+    padding: 4px 11px; border-radius: 999px; border: 1px solid var(--border);
+    background: color-mix(in srgb, var(--c-high) 14%, var(--surface-2)); }
+  .integrity.broken { background: color-mix(in srgb, var(--edge-spawned) 20%, var(--surface-2));
+    border-color: var(--edge-spawned); }
+  .integrity .itext { color: var(--text-2); }
+  .integrity .itext b { color: var(--text-1); }
+  .integrity .itext code { font-family: ui-monospace, Menlo, monospace; font-size: 11px; color: var(--text-muted); }
+  /* center view switch */
+  .viewswitch { display: inline-flex; border: 1px solid var(--border); border-radius: 7px; overflow: hidden; }
+  .viewswitch button { border: 0; border-radius: 0; padding: 5px 11px; background: var(--surface-2);
+    color: var(--text-muted); font-size: 12px; font-weight: 650; }
+  .viewswitch button.on { background: var(--accent); color: #fff; }
   /* segmented language switch */
   .lang { display: inline-flex; border: 1px solid var(--border); border-radius: 7px; overflow: hidden; }
   .lang button { border: 0; border-radius: 0; padding: 5px 9px; background: var(--surface-2);
@@ -173,6 +186,33 @@
   .graph-empty { position: absolute; inset: 0; display: grid; place-items: center;
     color: var(--text-muted); text-align: center; padding: 24px; }
 
+  /* ---------- timeline ---------- */
+  .timeline { position: absolute; inset: 0; overflow: auto; padding: 54px 18px 18px; }
+  .tl-row { display: grid; grid-template-columns: 64px 118px 1fr auto; gap: 12px;
+    align-items: baseline; padding: 7px 12px; border-radius: 8px; cursor: pointer;
+    border: 1px solid transparent; position: relative; }
+  .tl-row:hover { background: var(--surface-2); }
+  .tl-row.active { background: var(--surface-2); border-color: var(--border); }
+  .tl-row.instage { border-left: 3px solid var(--border); }
+  .tl-row.instage[data-c="high"]   { border-left-color: var(--c-high); }
+  .tl-row.instage[data-c="medium"] { border-left-color: var(--c-medium); }
+  .tl-row.instage[data-c="low"]    { border-left-color: var(--c-low); }
+  .tl-row.dim { opacity: .4; }
+  .tl-time { color: var(--text-muted); font-variant-numeric: tabular-nums; font-size: 12px; }
+  .tl-type { font-size: 10px; text-transform: uppercase; letter-spacing: .05em; font-weight: 700;
+    padding: 2px 7px; border-radius: 5px; align-self: center; text-align: center; }
+  .tl-type[data-k="process"]        { color: var(--process); background: color-mix(in srgb, var(--process) 16%, transparent); }
+  .tl-type[data-k="http_request"]   { color: var(--http);    background: color-mix(in srgb, var(--http) 16%, transparent); }
+  .tl-type[data-k="network_connection"] { color: var(--network); background: color-mix(in srgb, var(--network) 16%, transparent); }
+  .tl-label { font-size: 13px; word-break: break-word; }
+  .tl-label .stage-tags { margin-left: 8px; }
+  .tl-tag { display: inline-block; font-size: 10px; font-weight: 700; padding: 1px 6px;
+    border-radius: 999px; color: #fff; margin-left: 4px; vertical-align: middle; }
+  .tl-tag[data-c="high"] { background: var(--c-high); }
+  .tl-tag[data-c="medium"] { background: var(--c-medium); }
+  .tl-tag[data-c="low"] { background: var(--c-low); }
+  .tl-hash { font-family: ui-monospace, Menlo, monospace; font-size: 11px; color: var(--text-muted); }
+
   /* ---------- evidence panel ---------- */
   .ev-kind { font-size: 10px; text-transform: uppercase; letter-spacing: .08em;
     font-weight: 700; color: var(--text-muted); }
@@ -216,6 +256,10 @@
     <span class="pill" id="verdictPill" data-c="none">—</span>
     <span class="counts" id="verdictCounts"></span>
   </div>
+  <div class="integrity" id="integrity" hidden title="">
+    <span class="lock" id="integrityLock">🔒</span>
+    <span class="itext" id="integrityText"></span>
+  </div>
   <div class="spacer"></div>
   <label class="ctl"><input type="checkbox" id="focus" checked> <span data-i18n="focus"></span></label>
   <select id="layout">
@@ -248,8 +292,13 @@
   <!-- GRAPH -->
   <section class="col graph">
     <div id="cy"></div>
+    <div class="timeline" id="timeline" hidden></div>
     <div class="graph-empty" id="graphEmpty">…</div>
     <div class="graph-toolbar">
+      <div class="viewswitch" id="viewswitch">
+        <button data-view="graph" class="on" data-i18n="view_graph"></button>
+        <button data-view="timeline" data-i18n="view_timeline"></button>
+      </div>
       <button id="fit" data-i18n="fit"></button>
       <button id="clearSel" data-i18n="clear_sel"></button>
     </div>
@@ -309,6 +358,8 @@ const I18N = {
     tag_event: "event",
     f_pid: "PID", f_ppid: "Parent PID", f_cmd: "Command", f_container: "Container", f_time: "Time",
     f_status: "Status", f_srcip: "Source IP", f_dest: "Destination", f_proto: "Protocol", f_frompid: "From PID",
+    view_graph: "Graph", view_timeline: "Timeline", integrity: "Evidence integrity",
+    integrity_verified: "verified", integrity_broken: "TAMPERED", integrity_head: "head",
   },
   ru: {
     subtitle: "/ консоль расследования", case: "Дело", reconstruction: "Реконструкция",
@@ -330,6 +381,8 @@ const I18N = {
     tag_event: "событие",
     f_pid: "PID", f_ppid: "Родит. PID", f_cmd: "Команда", f_container: "Контейнер", f_time: "Время",
     f_status: "Статус", f_srcip: "IP источника", f_dest: "Назначение", f_proto: "Протокол", f_frompid: "Из PID",
+    view_graph: "Граф", view_timeline: "Таймлайн", integrity: "Целостность доказательств",
+    integrity_verified: "подтверждена", integrity_broken: "НАРУШЕНА", integrity_head: "голова",
   },
   kz: {
     subtitle: "/ тергеу консолі", case: "Іс", reconstruction: "Қайта құру",
@@ -351,6 +404,8 @@ const I18N = {
     tag_event: "оқиға",
     f_pid: "PID", f_ppid: "Аталық PID", f_cmd: "Команда", f_container: "Контейнер", f_time: "Уақыт",
     f_status: "Мәртебе", f_srcip: "Бастау IP", f_dest: "Межелі", f_proto: "Хаттама", f_frompid: "PID-тен",
+    view_graph: "Граф", view_timeline: "Уақыт сызбасы", integrity: "Дәлелдер тұтастығы",
+    integrity_verified: "расталған", integrity_broken: "БҰЗЫЛҒАН", integrity_head: "бас",
   },
 };
 let lang = localStorage.getItem('bb_lang') || 'ru';
@@ -365,6 +420,7 @@ const L = (dict) => (dict && (dict[lang] || dict.en)) || '';
 /* ---------- state ---------- */
 const hiddenEdges = new Set();
 let cy = null, graph = null, recon = null, nodeById = {}, activeStage = null, activeNode = null;
+let timeline = null, integrityData = null, view = 'graph';
 
 /* ---------- utils ---------- */
 function escapeHtml(s) {
@@ -421,13 +477,15 @@ async function loadScenarios() {
 async function loadCase() {
   const sid = $('#scenario').value; if (!sid) return;
   activeStage = null; activeNode = null;
-  const [g, r] = await Promise.all([
+  const [g, r, tl, integ] = await Promise.all([
     fetch(`/incidents/${encodeURIComponent(sid)}/graph`).then(x => x.ok ? x.json() : null),
     fetch(`/incidents/${encodeURIComponent(sid)}/reconstruction`).then(x => x.ok ? x.json() : null),
+    fetch(`/incidents/${encodeURIComponent(sid)}/timeline`).then(x => x.ok ? x.json() : null),
+    fetch('/integrity').then(x => x.ok ? x.json() : null),
   ]);
-  graph = g; recon = r; nodeById = {};
+  graph = g; recon = r; timeline = tl; integrityData = integ; nodeById = {};
   if (g) g.nodes.forEach((n) => nodeById[n.id] = n);
-  renderVerdict(); renderStory(); renderGraph(); resetEvidence();
+  renderVerdict(); renderIntegrity(); renderStory(); renderGraph(); renderTimeline(); resetEvidence();
   const m = /stage=([\w-]+)/.exec(location.hash);
   if (m && recon && recon.stages.some((s) => s.key === m[1])) selectStage(m[1]);
 }
@@ -441,6 +499,76 @@ function renderVerdict() {
   const pill = $('#verdictPill'); pill.dataset.c = c;
   pill.textContent = c === 'none' ? t('inconclusive') : t('conf_' + c);
   $('#verdictCounts').textContent = t('counts', { s: recon.stage_count, e: recon.event_count });
+}
+
+/* ---------- integrity badge ---------- */
+function renderIntegrity() {
+  const el = $('#integrity');
+  if (!integrityData) { el.hidden = true; return; }
+  el.hidden = false;
+  const ok = integrityData.ok;
+  el.classList.toggle('broken', !ok);
+  $('#integrityLock').textContent = ok ? '🔒' : '⚠';
+  const head = (integrityData.head || '').slice(0, 10);
+  $('#integrityText').innerHTML = ok
+    ? `${escapeHtml(t('integrity'))}: <b>${escapeHtml(t('integrity_verified'))}</b> · ${integrityData.count} · <code>${escapeHtml(head)}…</code>`
+    : `${escapeHtml(t('integrity'))}: <b>${escapeHtml(t('integrity_broken'))}</b>`;
+  el.title = ok ? `${t('integrity_head')}: ${integrityData.head}` : (integrityData.reason || '');
+}
+
+/* ---------- timeline ---------- */
+function renderTimeline() {
+  const box = $('#timeline');
+  if (!timeline) { box.innerHTML = ''; return; }
+  const typeLabel = { process_created: t('n_process'), http_request: t('n_http'), network_connection: t('n_network') };
+  box.innerHTML = timeline.entries.map((e) => {
+    const topStage = e.stages.length ? e.stages.reduce((a, b) =>
+      CONF_RANK[b.confidence] > CONF_RANK[a.confidence] ? b : a) : null;
+    const tags = e.stages.map((s) =>
+      `<span class="tl-tag" data-c="${s.confidence}">${s.order}</span>`).join('');
+    const tl = (typeLabel[e.event_type] || e.event_type);
+    return `<div class="tl-row ${topStage ? 'instage' : ''}" ${topStage ? `data-c="${topStage.confidence}"` : ''} data-id="${escapeHtml(e.event_id)}" data-stages="${e.stages.map(s=>s.key).join(' ')}">
+      <span class="tl-time">${clock(e.timestamp)}</span>
+      <span class="tl-type" data-k="${e.event_type}">${escapeHtml(tl)}</span>
+      <span class="tl-label">${escapeHtml(e.label)}<span class="stage-tags">${tags}</span></span>
+      <span class="tl-hash" title="${escapeHtml(e.chain_hash || '')}">${escapeHtml((e.chain_hash||'').slice(0,8))}</span>
+    </div>`;
+  }).join('');
+  box.querySelectorAll('.tl-row').forEach((row) => {
+    row.addEventListener('click', () => {
+      box.querySelectorAll('.tl-row').forEach((r) => r.classList.remove('active'));
+      row.classList.add('active');
+      showNodeEvidence(row.dataset.id);
+    });
+  });
+  if (activeStage) markTimelineStage(activeStage);
+}
+const CONF_RANK = { low: 0, medium: 1, high: 2 };
+
+function markTimelineStage(key) {
+  const rows = $('#timeline').querySelectorAll('.tl-row');
+  let first = null;
+  rows.forEach((r) => {
+    const inStage = r.dataset.stages.split(' ').includes(key);
+    r.classList.toggle('dim', key && !inStage);
+    if (inStage && !first) first = r;
+  });
+  if (first && view === 'timeline') first.scrollIntoView({ block: 'center', behavior: 'smooth' });
+}
+function clearTimelineStage() {
+  $('#timeline').querySelectorAll('.tl-row').forEach((r) => r.classList.remove('dim', 'active'));
+}
+
+/* ---------- view switch ---------- */
+function setView(v) {
+  view = v;
+  $('#cy').hidden = v !== 'graph';
+  $('#timeline').hidden = v !== 'timeline';
+  document.querySelector('.legend').style.display = v === 'graph' ? '' : 'none';
+  $('#fit').style.display = v === 'graph' ? '' : 'none';
+  document.querySelectorAll('#viewswitch button').forEach((b) => b.classList.toggle('on', b.dataset.view === v));
+  if (v === 'graph' && cy) { cy.resize(); cy.fit(undefined, 40); if (activeStage) highlightStage(activeStage); }
+  if (v === 'timeline' && activeStage) markTimelineStage(activeStage);
 }
 
 /* ---------- narrative ---------- */
@@ -514,12 +642,13 @@ function highlightStage(key) {
 function selectStage(key) {
   activeStage = key; activeNode = null;
   document.querySelectorAll('.stage').forEach((el) => el.classList.toggle('active', el.dataset.key === key));
-  highlightStage(key); showStageEvidence(key);
+  highlightStage(key); markTimelineStage(key); showStageEvidence(key);
 }
 function clearSelection() {
   activeStage = null; activeNode = null;
   document.querySelectorAll('.stage').forEach((el) => el.classList.remove('active'));
   if (cy) cy.elements().removeClass('stage-hit faded');
+  clearTimelineStage();
   resetEvidence();
 }
 
@@ -614,8 +743,8 @@ function row(dt, dd, mono) {
 
 /* ---------- re-render on language change ---------- */
 function rerenderDynamic() {
-  renderVerdict(); renderStory();
-  if (activeStage) showStageEvidence(activeStage);
+  renderVerdict(); renderIntegrity(); renderStory(); renderTimeline();
+  if (activeStage) { markTimelineStage(activeStage); showStageEvidence(activeStage); }
   else if (activeNode) showNodeEvidence(activeNode);
   else resetEvidence();
 }
@@ -652,6 +781,9 @@ $('#lang').addEventListener('click', (e) => {
   lang = b.dataset.lang; localStorage.setItem('bb_lang', lang);
   applyI18n(); rerenderDynamic();
 });
+$('#viewswitch').addEventListener('click', (e) => {
+  const b = e.target.closest('button[data-view]'); if (b) setView(b.dataset.view);
+});
 $('#collapseLeft').addEventListener('click', () => setCollapsed('left', true));
 $('#collapseRight').addEventListener('click', () => setCollapsed('right', true));
 $('#reopenLeft').addEventListener('click', () => setCollapsed('left', false));
@@ -672,6 +804,7 @@ $('#reopenRight').addEventListener('click', () => setCollapsed('right', false));
     resetEvidence(); return;
   }
   await loadCase();
+  if (qs.get('view') === 'timeline') setView('timeline');
 })();
 </script>
 </body>
