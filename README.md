@@ -75,15 +75,21 @@ BLACKBOX
 - [x] Collector: HTTP-запросы из логов Apache.
 - [x] Correlation Engine: граф инцидента (`parent_of`, `spawned_by`,
       `connected_to`), у каждой связи есть обоснование.
-- [x] Web Dashboard: граф инцидента на Cytoscape (`GET /ui`).
+- [x] Reconstruction Engine: история атаки по этапам (тактика + техника
+      MITRE + обоснование + уверенность + ссылки на события),
+      `GET /incidents/{case}/reconstruction`.
+- [x] Detection + MITRE ATT&CK Mapping (детекторы в Reconstruction Engine).
+- [x] Investigation Console (`GET /ui`): история атаки + граф + панель
+      доказательств; языки RU/EN/KZ; сворачиваемые боковые колонки.
+- [x] Офлайн-демо: фикстура инцидента + `scripts/replay.py`.
 - [x] Лаборатория: уязвимые CTF-машины (Iceberg Zone 1), захват телеметрии
       проверен сквозным прогоном реальной атаки machine1.
 
 ### В разработке
 
-- [ ] Timeline Builder.
-- [ ] Detection Engine (правила в стиле Sigma).
-- [ ] MITRE ATT&CK Mapping.
+- [ ] Timeline-представление (отдельный хронологический вид).
+- [ ] Rules Management (детекторы как правила-данные).
+- [ ] Целостность доказательств (хеш-цепочка) и экспорт отчёта.
 - [ ] Подключение остальных 7 CTF-машин к коллектору.
 - [ ] AI Investigator.
 
