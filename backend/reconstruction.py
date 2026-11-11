@@ -33,10 +33,21 @@ from datetime import datetime
 from typing import Any, Callable, Iterable
 from urllib.parse import unquote
 
+from backend.correlation import WEB_SERVER_NAMES
+
 LANGS = ("en", "ru", "kz")
 
 # Ordered weakest -> strongest; used to roll up an overall verdict.
 CONFIDENCE_ORDER = ["low", "medium", "high"]
+
+# Kill-chain order of tactics. Stages are told as a story in this order
+# (with evidence time as a tiebreaker) rather than by raw timestamp, because
+# receipt-time stamping across two collectors is too coarse to trust for
+# ordering a sub-second attack.
+TACTIC_ORDER = [
+    "reconnaissance", "initial_access", "persistence", "execution",
+    "privilege_escalation", "collection", "command_and_control",
+]
 
 # MITRE ATT&CK tactic names per language. Technique *names* stay English
 # (their canonical form); tactics read more naturally localized.
@@ -55,6 +66,8 @@ TACTICS: dict[str, dict[str, str]] = {
         "kz": "Артықшылықтарды арттыру"},
     "command_and_control": {
         "en": "Command and Control", "ru": "Управление", "kz": "Басқару"},
+    "collection": {
+        "en": "Collection", "ru": "Сбор данных", "kz": "Деректерді жинау"},
 }
 
 # Per-stage static text. Tactic references a key in TACTICS. title / reason
@@ -132,31 +145,75 @@ TEMPLATES: dict[str, dict[str, Any]] = {
             "kz": "{n} жүктеу POST сәтті өтті. Орындау кезеңімен бірге бұл "
                   "жүктелген веб-шелл."},
     },
+    "ssti": {
+        "tactic": "initial_access",
+        "technique_id": "T1190",
+        "technique": "Exploit Public-Facing Application",
+        "title": {
+            "en": "Server-side template injection",
+            "ru": "SSTI — внедрение шаблона на сервере",
+            "kz": "SSTI — серверлік шаблон инъекциясы"},
+        "reason": {
+            "en": "request parameters carried template-injection syntax "
+                  "({{…}}, __globals__, __import__) that reaches language internals",
+            "ru": "в параметрах запроса был синтаксис внедрения шаблона "
+                  "({{…}}, __globals__, __import__), дотягивающийся до внутренностей языка",
+            "kz": "сұрау параметрлерінде тіл ішкі механизмдеріне жететін "
+                  "шаблон инъекциясының синтаксисі болды ({{…}}, __globals__, __import__)"},
+        "summary": {
+            "en": "{n} request(s) to {endpoints} carried server-side "
+                  "template-injection payloads reaching language internals "
+                  "(a path to code execution).",
+            "ru": "{n} запрос(ов) к {endpoints} несли SSTI-пейлоады, "
+                  "дотягивающиеся до внутренностей языка (путь к выполнению кода).",
+            "kz": "{endpoints} мекенжайына {n} сұрау тіл ішкі механизмдеріне "
+                  "жететін SSTI-пейлоадтарды тасыды (код орындауға жол)."},
+    },
     "webshell_rce": {
         "tactic": "execution",
         "technique_id": "T1059",
         "technique": "Command and Scripting Interpreter",
         "title": {
-            "en": "Remote code execution via web shell",
-            "ru": "Удалённое выполнение кода через веб-шелл",
-            "kz": "Веб-шелл арқылы қашықтан код орындау"},
+            "en": "Remote code execution via the web application",
+            "ru": "Удалённое выполнение кода через веб-приложение",
+            "kz": "Веб-қосымша арқылы қашықтан код орындау"},
         "reason": {
-            "en": "the correlation engine tied spawned shell process(es) to "
-                  "the HTTP request that carried their command",
-            "ru": "движок корреляции связал порождённые процессы шелла с "
-                  "HTTP-запросом, нёсшим их команду",
-            "kz": "корреляция қозғалтқышы туындаған шелл процестерін олардың "
-                  "командасын тасыған HTTP-сұраумен байланыстырды"},
+            "en": "the web server spawned OS shells — a web app running "
+                  "/bin/sh is the signature of RCE; linked to the request "
+                  "when correlation found one",
+            "ru": "веб-сервер породил системные shell — веб-приложение, "
+                  "запускающее /bin/sh, это признак RCE; связано с запросом, "
+                  "если корреляция его нашла",
+            "kz": "веб-сервер жүйелік shell туғызды — /bin/sh іске қосатын "
+                  "веб-қосымша RCE белгісі; корреляция тапқанда сұраумен "
+                  "байланыстырылды"},
         "summary": {
-            "en": "{n} process(es) were executed through the web server and "
-                  "attributed to attacker HTTP requests — commands ran on "
-                  "the host as the web user.",
-            "ru": "{n} процесс(ов) были выполнены через веб-сервер и "
-                  "привязаны к HTTP-запросам злоумышленника — команды "
-                  "выполнялись на хосте от имени веб-пользователя.",
-            "kz": "{n} процесс веб-сервер арқылы орындалып, шабуылдаушының "
-                  "HTTP-сұрауларына байланыстырылды — командалар хостта "
-                  "веб-пайдаланушы атынан орындалды."},
+            "en": "{n} shell process(es) were spawned by the web server — "
+                  "the application executed attacker commands on the host.",
+            "ru": "{n} shell-процесс(ов) были порождены веб-сервером — "
+                  "приложение выполняло команды злоумышленника на хосте.",
+            "kz": "{n} shell процесс веб-сервермен туғызылды — қосымша "
+                  "шабуылдаушы командаларын хостта орындады."},
+    },
+    "sensitive_access": {
+        "tactic": "collection",
+        "technique_id": "T1005",
+        "technique": "Data from Local System",
+        "title": {
+            "en": "Sensitive file read",
+            "ru": "Чтение чувствительного файла",
+            "kz": "Құпия файлды оқу"},
+        "reason": {
+            "en": "a process read a protected path (/root, /etc/shadow)",
+            "ru": "процесс прочитал защищённый путь (/root, /etc/shadow)",
+            "kz": "процесс қорғалған жолды оқыды (/root, /etc/shadow)"},
+        "summary": {
+            "en": "{n} process(es) read protected files ({paths}) — the "
+                  "attacker reached secrets such as the flag or password hashes.",
+            "ru": "{n} процесс(ов) прочитали защищённые файлы ({paths}) — "
+                  "злоумышленник добрался до секретов (флаг, хеши паролей).",
+            "kz": "{n} процесс қорғалған файлдарды оқыды ({paths}) — "
+                  "шабуылдаушы құпияларға жетті (флаг, пароль хэштері)."},
     },
     "privilege_escalation": {
         "tactic": "privilege_escalation",
@@ -167,24 +224,19 @@ TEMPLATES: dict[str, dict[str, Any]] = {
             "ru": "Повышение привилегий",
             "kz": "Артықшылықтарды арттыру"},
         "reason": {
-            "en": "a command manipulated PATH around a privileged/SUID "
-                  "helper to run attacker code with elevated rights",
-            "ru": "команда подменила PATH вокруг привилегированного/"
-                  "SUID-хелпера, чтобы выполнить код злоумышленника с "
-                  "повышенными правами",
-            "kz": "команда артықшылықты/SUID көмекшісінің айналасында "
-                  "PATH-ты алмастырып, шабуылдаушы кодын жоғары "
-                  "құқықтармен орындады"},
+            "en": "a SUID/privileged helper, a preserved-privilege shell "
+                  "(-p), or a PATH hijack ran code with elevated rights",
+            "ru": "SUID/привилегированный хелпер, shell с сохранением прав "
+                  "(-p) или подмена PATH выполнили код с повышенными правами",
+            "kz": "SUID/артықшылықты көмекші, құқықты сақтайтын shell (-p) "
+                  "немесе PATH алмастыру кодты жоғары құқықтармен орындады"},
         "summary": {
-            "en": "A process chain shows PATH manipulation around a "
-                  "privileged helper ({helpers}), the hallmark of a SUID "
-                  "PATH-hijack escalation.",
-            "ru": "Цепочка процессов показывает подмену PATH вокруг "
-                  "привилегированного хелпера ({helpers}) — признак "
-                  "эскалации через SUID PATH-hijack.",
-            "kz": "Процестер тізбегі артықшылықты көмекші ({helpers}) "
-                  "айналасында PATH алмастыруын көрсетеді — SUID "
-                  "PATH-hijack эскалациясының белгісі."},
+            "en": "A process chain shows privilege escalation via {helpers} "
+                  "(SUID helper / preserved-privilege shell / PATH hijack).",
+            "ru": "Цепочка процессов показывает повышение привилегий через "
+                  "{helpers} (SUID-хелпер / shell с -p / подмена PATH).",
+            "kz": "Процестер тізбегі {helpers} арқылы артықшылықтарды "
+                  "арттыруды көрсетеді (SUID көмекші / -p shell / PATH алмастыру)."},
     },
     "outbound_connection": {
         "tactic": "command_and_control",
@@ -248,6 +300,25 @@ VCS_MARKERS = ("/.git/", "/.svn/", "/.hg/")
 WEBSHELL_CMD_PARAMS = ("c=", "cmd=", "exec=", "command=", "shell=")
 EXECUTABLE_UPLOAD_EXT = (".phtml", ".php", ".php5", ".phar", ".jsp", ".asp", ".aspx")
 PRIVESC_MARKERS = ("export path=", "path=/tmp", "path=.", "/usr/local/bin/")
+
+# Server-side template injection. STRONG markers reach language internals
+# (near-certain RCE); the weak ones are just template syntax.
+SSTI_MARKERS = (
+    "{{", "}}", "{%", "${", "<%=", "#{",
+    "__class__", "__globals__", "__import__", "__builtins__",
+    "__subclasses__", "os.system", "popen(", "subprocess",
+)
+SSTI_STRONG = (
+    "__globals__", "__import__", "__builtins__", "__subclasses__",
+    "os.system", "popen(", "subprocess",
+)
+
+# Shells an application should never normally exec — a web server spawning
+# one of these is the signature of remote code execution.
+SHELL_NAMES = {"sh", "bash", "dash", "zsh", "ksh", "ash"}
+
+# Protected paths whose read means the attacker reached secrets.
+SENSITIVE_PATHS = ("/root/", "/etc/shadow", "/etc/sudoers")
 
 
 Stage = dict[str, Any]
@@ -333,6 +404,30 @@ def _detect_sql_injection(events: list[dict], graph: dict) -> list[Stage]:
     )]
 
 
+def _detect_ssti(events: list[dict], graph: dict) -> list[Stage]:
+    hits = [
+        e for e in events
+        if e["event_type"] == "http_request"
+        and any(m in _decoded_target(e) for m in SSTI_MARKERS)
+    ]
+    if not hits:
+        return []
+    hits.sort(key=lambda e: _ts(e["timestamp"]))
+    endpoints = sorted({(_http(e).get("path") or "").split("?")[0] for e in hits})
+    strong = any(
+        any(m in _decoded_target(e) for m in SSTI_STRONG) for e in hits
+    )
+    summary = _localize(
+        TEMPLATES["ssti"]["summary"],
+        n=len(hits), endpoints=", ".join(endpoints[:3]),
+    )
+    return [_mk_stage(
+        key="ssti", confidence="high" if strong else "medium", summary=summary,
+        evidence=[e["event_id"] for e in hits],
+        nodes=[e["event_id"] for e in hits], time=hits[0]["timestamp"],
+    )]
+
+
 def _detect_webshell_upload(events: list[dict], graph: dict) -> list[Stage]:
     hits = [
         e for e in events
@@ -353,73 +448,112 @@ def _detect_webshell_upload(events: list[dict], graph: dict) -> list[Stage]:
 
 
 def _detect_webshell_rce(events: list[dict], graph: dict) -> list[Stage]:
-    """RCE via web shell, proven by a correlation spawned_by edge.
+    """RCE: a web server spawned OS shells.
 
-    This is the strongest kind of finding: not a pattern in a log, but a
-    process the graph attributes to a specific HTTP request.
+    Primarily process-based — a web app running /bin/sh is the signature of
+    code execution, and it is caught from process telemetry even when no
+    HTTP log was available. When the correlation graph also tied a shell to
+    an HTTP request, that request is added as chain-of-custody and raises
+    confidence.
     """
+    shells = [
+        e for e in events
+        if e["event_type"] == "process_created"
+        and e["process"].get("parent_name") in WEB_SERVER_NAMES
+        and (e["process"].get("name") or "") in SHELL_NAMES
+    ]
+    if not shells:
+        return []
+    shells.sort(key=lambda e: _ts(e["timestamp"]))
+
+    evidence = [e["event_id"] for e in shells]
+    nodes = list(evidence)
+
+    # Enrich with correlated requests (spawned_by edges), for custody + confidence.
     node_by_id = {n["id"]: n for n in graph.get("nodes", [])}
     spawned = [e for e in graph.get("edges", []) if e["kind"] == "spawned_by"]
-    if not spawned:
-        return []
-
-    evidence: list[str] = []
-    nodes: list[str] = []
-    first_time: str | None = None
     served_shell = False
-
     for edge in spawned:
         req = node_by_id.get(edge["source"])
-        proc = node_by_id.get(edge["target"])
-        if req is None or proc is None:
+        if req is None:
             continue
-        target = unquote((req.get("label") or "")).lower()
-        if any(ext in target for ext in EXECUTABLE_UPLOAD_EXT):
+        if any(ext in unquote((req.get("label") or "")).lower()
+               for ext in EXECUTABLE_UPLOAD_EXT):
             served_shell = True
-        for nid in (edge["source"], edge["target"]):
-            if nid not in nodes:
-                nodes.append(nid)
-                evidence.append(nid)
-        ts = proc.get("timestamp")
-        if ts and (first_time is None or _ts(ts) < _ts(first_time)):
-            first_time = ts
+        if edge["source"] not in nodes:
+            nodes.append(edge["source"])
+            evidence.append(edge["source"])
 
-    if not nodes:
-        return []
-
-    # "carried the command" edges are the high-confidence ones.
     carried = any("carried the command" in e["reason"] for e in spawned)
     confidence = "high" if (carried or served_shell) else "medium"
-    summary = _localize(TEMPLATES["webshell_rce"]["summary"], n=len(spawned))
+    summary = _localize(TEMPLATES["webshell_rce"]["summary"], n=len(shells))
     return [_mk_stage(
         key="webshell_rce", confidence=confidence, summary=summary,
-        evidence=evidence, nodes=nodes, time=first_time,
+        evidence=evidence, nodes=nodes, time=shells[0]["timestamp"],
     )]
+
+
+SUID_HELPER_NAMES = {"system-backup", "backup", "tar", "rootbash"}
+
+
+def _is_privesc(event: dict) -> bool:
+    p = _proc(event)
+    name = (p.get("name") or "")
+    cmd = (p.get("command_line") or "").lower()
+    if name in SUID_HELPER_NAMES:
+        return True
+    if any(m in cmd for m in PRIVESC_MARKERS):
+        return True
+    # A shell invoked with -p keeps SUID privileges (classic root shell).
+    if name in SHELL_NAMES and (" -p " in f" {cmd} " or cmd.endswith(" -p")):
+        return True
+    # A shell binary planted in a world-writable dir and run.
+    if any(d in cmd for d in ("/tmp/", "/var/tmp/", "/dev/shm/")) and \
+            any(s in cmd for s in ("rootbash", "bash", "/sh ", "/sh\"")):
+        return True
+    # Making a file SUID.
+    if "chmod" in cmd and any(s in cmd for s in ("+s", "u+s", "4755", "6755", "4777")):
+        return True
+    return False
 
 
 def _detect_privilege_escalation(events: list[dict], graph: dict) -> list[Stage]:
     hits = [
         e for e in events
-        if e["event_type"] == "process_created"
-        and any(m in (_proc(e).get("command_line") or "").lower()
-                for m in PRIVESC_MARKERS)
+        if e["event_type"] == "process_created" and _is_privesc(e)
     ]
-    # Also catch a process that visibly changed euid to root downstream of a
-    # web-spawned shell, named like a backup/SUID helper.
-    suid_like = [
-        e for e in events
-        if e["event_type"] == "process_created"
-        and (_proc(e).get("name") or "") in {"system-backup", "backup", "tar"}
-    ]
-    if not hits and not suid_like:
+    if not hits:
         return []
-    chain = {e["event_id"]: e for e in hits + suid_like}
-    ordered = sorted(chain.values(), key=lambda e: _ts(e["timestamp"]))
+    ordered = sorted(hits, key=lambda e: _ts(e["timestamp"]))
     helpers = ", ".join(sorted({(_proc(e).get("name") or "?") for e in ordered}))
     summary = _localize(
         TEMPLATES["privilege_escalation"]["summary"], helpers=helpers)
     return [_mk_stage(
         key="privilege_escalation", confidence="medium", summary=summary,
+        evidence=[e["event_id"] for e in ordered],
+        nodes=[e["event_id"] for e in ordered], time=ordered[0]["timestamp"],
+    )]
+
+
+def _detect_sensitive_access(events: list[dict], graph: dict) -> list[Stage]:
+    hits = [
+        e for e in events
+        if e["event_type"] == "process_created"
+        and any(p in (_proc(e).get("command_line") or "") for p in SENSITIVE_PATHS)
+    ]
+    if not hits:
+        return []
+    ordered = sorted(hits, key=lambda e: _ts(e["timestamp"]))
+    paths = sorted({
+        p for e in ordered for p in SENSITIVE_PATHS
+        if p in (_proc(e).get("command_line") or "")
+    })
+    summary = _localize(
+        TEMPLATES["sensitive_access"]["summary"],
+        n=len(ordered), paths=", ".join(paths),
+    )
+    return [_mk_stage(
+        key="sensitive_access", confidence="high", summary=summary,
         evidence=[e["event_id"] for e in ordered],
         nodes=[e["event_id"] for e in ordered], time=ordered[0]["timestamp"],
     )]
@@ -450,9 +584,11 @@ def _detect_outbound(events: list[dict], graph: dict) -> list[Stage]:
 DETECTORS: list[Detector] = [
     _detect_vcs_exposure,
     _detect_sql_injection,
+    _detect_ssti,
     _detect_webshell_upload,
     _detect_webshell_rce,
     _detect_privilege_escalation,
+    _detect_sensitive_access,
     _detect_outbound,
 ]
 
@@ -488,8 +624,14 @@ def reconstruct(events: Iterable[dict], graph: dict) -> dict[str, Any]:
     for detector in DETECTORS:
         stages.extend(detector(events, graph))
 
-    # Order the narrative by when its evidence first appears.
-    stages.sort(key=lambda s: _ts(s["time"]) if s["time"] else datetime.max)
+    # Tell the story in kill-chain order; evidence time breaks ties.
+    def _order_key(s: Stage):
+        tactic_key = TEMPLATES[s["key"]]["tactic"]
+        rank = (TACTIC_ORDER.index(tactic_key)
+                if tactic_key in TACTIC_ORDER else len(TACTIC_ORDER))
+        return (rank, _ts(s["time"]) if s["time"] else datetime.max)
+
+    stages.sort(key=_order_key)
     for i, stage in enumerate(stages, start=1):
         stage["order"] = i
 

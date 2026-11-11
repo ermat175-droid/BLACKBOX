@@ -96,6 +96,44 @@ class TestDetectors(unittest.TestCase):
                  if s["key"] == "privilege_escalation")
         self.assertEqual(s["technique_id"], "T1548")
 
+    def test_ssti_strong_is_high(self):
+        events = [_http("s1", "/pdf?title={{ self.__globals__.__import__('os') }}",
+                        "2026-01-01T10:00:00")]
+        s = next(s for s in _reconstruct(events)["stages"] if s["key"] == "ssti")
+        self.assertEqual(s["technique_id"], "T1190")
+        self.assertEqual(s["confidence"], "high")
+
+    def test_ssti_weak_is_medium(self):
+        events = [_http("s1", "/p?x={{7*7}}", "2026-01-01T10:00:00")]
+        s = next(s for s in _reconstruct(events)["stages"] if s["key"] == "ssti")
+        self.assertEqual(s["confidence"], "medium")
+
+    def test_rce_detected_from_process_only_no_http(self):
+        # uvicorn app with NO access log: a web server spawning /bin/sh is RCE
+        events = [
+            _proc("web", "uvicorn", 10, 1, "2026-01-01T10:00:00"),
+            _proc("sh", "sh", 50, 10, "2026-01-01T10:00:05",
+                  cmd="/bin/sh -c cat /root/flag.txt", parent_name="uvicorn"),
+        ]
+        keys = [s["key"] for s in _reconstruct(events)["stages"]]
+        self.assertIn("webshell_rce", keys)
+
+    def test_privesc_rootbash_and_dash_p(self):
+        for cmd, name in [("/var/tmp/rootbash -p -c id", "rootbash"),
+                          ("/bin/bash -p", "bash")]:
+            events = [_proc("p", name, 50, 10, "2026-01-01T10:00:06", cmd=cmd)]
+            s = next((s for s in _reconstruct(events)["stages"]
+                      if s["key"] == "privilege_escalation"), None)
+            self.assertIsNotNone(s, f"privesc not detected for {cmd}")
+
+    def test_sensitive_file_read(self):
+        events = [_proc("c", "cat", 60, 50, "2026-01-01T10:00:07",
+                        cmd="/usr/bin/cat /root/flag.txt")]
+        s = next(s for s in _reconstruct(events)["stages"]
+                 if s["key"] == "sensitive_access")
+        self.assertEqual(s["technique_id"], "T1005")
+        self.assertEqual(s["confidence"], "high")
+
 
 class TestNarrative(unittest.TestCase):
 
