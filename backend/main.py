@@ -14,6 +14,7 @@ from backend.correlation import correlate
 from backend.database import Base, SessionLocal, engine
 from backend.models import Event
 from backend.normalization import normalize_event
+from backend.reconstruction import reconstruct
 from backend.schemas import EventResponse
 
 
@@ -185,6 +186,28 @@ def incident_graph(scenario_id: str, db: Session = Depends(get_db)):
     graph["scenario_id"] = scenario_id
     graph["event_count"] = len(events)
     return graph
+
+
+@app.get("/incidents/{scenario_id}/reconstruction")
+def incident_reconstruction(scenario_id: str, db: Session = Depends(get_db)):
+    query = (
+        select(Event)
+        .where(Event.scenario_id == scenario_id)
+        .order_by(Event.timestamp, Event.id)
+    )
+    events = [event.normalized for event in db.scalars(query)]
+
+    if not events:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No events for scenario {scenario_id}"
+        )
+
+    graph = correlate(events)
+    result = reconstruct(events, graph)
+    result["scenario_id"] = scenario_id
+    result["event_count"] = len(events)
+    return result
 
 
 # The web UI is served at /ui (mounted last so it never shadows the API).
