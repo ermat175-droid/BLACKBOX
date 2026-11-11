@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="ru" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BLACKBOX — Target Loader</title>
+<style>
+  :root {
+    color-scheme: dark;
+    --surface-0:#141413; --surface-1:#1a1a19; --surface-2:#232321; --surface-3:#2c2c29;
+    --border:#3a3a37; --text-1:#f0efec; --text-2:#c3c2b7; --text-muted:#8a897f;
+    --accent:#c96442; --ok:#2fa36b; --warn:#d99a26; --bad:#e66767;
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --surface-0:#f5f5f3; --surface-1:#fcfcfb; --surface-2:#eeeeea; --surface-3:#e5e4de;
+    --border:#d6d5cf; --text-1:#16150f; --text-2:#52514e; --text-muted:#86857c;
+    --accent:#b24a2b; --ok:#1f8a57; --warn:#b57d12; --bad:#e34948;
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  html, body { height:100%; margin:0; }
+  body { font:14px/1.5 ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+    background:var(--surface-0); color:var(--text-1); display:flex; flex-direction:column; height:100vh; }
+  header { display:flex; align-items:center; gap:12px; padding:10px 16px;
+    background:var(--surface-1); border-bottom:1px solid var(--border); flex-wrap:wrap; }
+  header h1 { font-size:14px; font-weight:700; margin:0; letter-spacing:.1em; }
+  header h1 b { color:var(--accent); } header h1 span { color:var(--text-muted); font-weight:400; }
+  .spacer { flex:1; }
+  a.navlink, button { font:inherit; background:var(--surface-2); color:var(--text-1);
+    border:1px solid var(--border); border-radius:6px; padding:6px 11px; cursor:pointer; text-decoration:none; }
+  a.navlink:hover, button:hover { border-color:var(--text-muted); }
+  button.primary { background:var(--accent); border-color:var(--accent); color:#fff; font-weight:600; }
+  button.danger:hover { border-color:var(--bad); color:var(--bad); }
+  button:disabled { opacity:.5; cursor:default; }
+  .lang { display:inline-flex; border:1px solid var(--border); border-radius:7px; overflow:hidden; }
+  .lang button { border:0; border-radius:0; padding:6px 9px; background:var(--surface-2);
+    color:var(--text-muted); font-size:12px; font-weight:700; }
+  .lang button.on { background:var(--accent); color:#fff; }
+  main { flex:1; overflow:auto; padding:22px; max-width:980px; width:100%; margin:0 auto; }
+  .note { font-size:12.5px; color:var(--text-2); background:color-mix(in srgb, var(--warn) 12%, var(--surface-1));
+    border:1px solid color-mix(in srgb, var(--warn) 40%, var(--border)); border-radius:9px; padding:10px 13px; margin-bottom:18px; }
+  .panel { background:var(--surface-1); border:1px solid var(--border); border-radius:12px; padding:16px 18px; margin-bottom:18px; }
+  .panel h2 { font-size:11px; text-transform:uppercase; letter-spacing:.09em; color:var(--text-muted);
+    margin:0 0 12px; font-weight:700; }
+  .engine { display:flex; align-items:center; gap:12px; }
+  .engine .state { display:inline-flex; align-items:center; gap:8px; font-weight:600; }
+  .dot { width:10px; height:10px; border-radius:50%; background:var(--text-muted); }
+  .dot.on { background:var(--ok); } .dot.off { background:var(--text-muted); }
+  .engine .hint { color:var(--text-muted); font-size:12.5px; }
+  form.add { display:grid; grid-template-columns:1fr 1fr; gap:12px 16px; }
+  form.add .full { grid-column:1 / -1; }
+  label.f { display:flex; flex-direction:column; gap:4px; font-size:12px; color:var(--text-muted); }
+  label.f input, label.f select { font:inherit; font-size:14px; background:var(--surface-2);
+    color:var(--text-1); border:1px solid var(--border); border-radius:7px; padding:8px 10px; }
+  .targets { display:flex; flex-direction:column; gap:12px; }
+  .card { background:var(--surface-1); border:1px solid var(--border); border-radius:12px;
+    padding:14px 16px; display:grid; grid-template-columns:1fr auto; gap:10px 16px; align-items:center; }
+  .card .main { min-width:0; }
+  .card .name { font-size:15px; font-weight:650; display:flex; align-items:center; gap:9px; }
+  .card .meta { color:var(--text-2); font-size:12.5px; margin-top:3px; word-break:break-word; }
+  .card .meta code { font-family:ui-monospace, Menlo, monospace; background:var(--surface-3);
+    padding:1px 5px; border-radius:4px; color:var(--text-1); }
+  .badge { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.04em;
+    padding:2px 8px; border-radius:999px; color:#fff; }
+  .badge.run { background:var(--ok); } .badge.stop { background:var(--text-muted); } .badge.err { background:var(--bad); }
+  .card .actions { display:flex; gap:7px; flex-wrap:wrap; justify-content:flex-end; }
+  .empty { color:var(--text-muted); text-align:center; padding:26px; }
+  .toast { position:fixed; bottom:18px; left:50%; transform:translateX(-50%);
+    background:var(--surface-2); border:1px solid var(--border); border-radius:9px; padding:10px 16px;
+    font-size:13px; max-width:70%; opacity:0; transition:opacity .2s; pointer-events:none; }
+  .toast.show { opacity:1; }
+  .toast.err { border-color:var(--bad); color:var(--bad); }
+</style>
+</head>
+<body>
+<header>
+  <h1><b>BLACKBOX</b> <span data-i18n="subtitle"></span></h1>
+  <a class="navlink" href="/ui/" data-i18n="nav_console"></a>
+  <div class="spacer"></div>
+  <div class="lang" id="lang">
+    <button data-lang="ru">RU</button><button data-lang="en">EN</button><button data-lang="kz">KZ</button>
+  </div>
+  <button id="theme" title="Theme">◐</button>
+</header>
+
+<main>
+  <div class="note" data-i18n="safety"></div>
+
+  <div class="panel">
+    <h2 data-i18n="engine_title"></h2>
+    <div class="engine">
+      <span class="state"><span class="dot" id="engineDot"></span><span id="engineState"></span></span>
+      <button id="engineBtn"></button>
+      <span class="hint" id="engineHint"></span>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2 data-i18n="add_title"></h2>
+    <form class="add" id="addForm">
+      <label class="f"><span data-i18n="f_name"></span>
+        <input id="f_name" required placeholder="Ice Portal"></label>
+      <label class="f"><span data-i18n="f_type"></span>
+        <select id="f_type">
+          <option value="image" data-i18n="type_image"></option>
+          <option value="build" data-i18n="type_build"></option>
+        </select></label>
+      <label class="f full" id="wrap_image"><span data-i18n="f_image"></span>
+        <input id="f_image" placeholder="ice-public-portal:latest"></label>
+      <label class="f full" id="wrap_path" hidden><span data-i18n="f_path"></span>
+        <input id="f_path" placeholder="~/sites/myapp"></label>
+      <label class="f"><span data-i18n="f_cport"></span>
+        <input id="f_cport" type="number" value="80" min="1" max="65535"></label>
+      <label class="f"><span data-i18n="f_hport"></span>
+        <input id="f_hport" type="number" min="1" max="65535" placeholder="auto"></label>
+      <div class="full"><button class="primary" type="submit" data-i18n="add_btn"></button></div>
+    </form>
+  </div>
+
+  <div class="panel">
+    <h2 data-i18n="list_title"></h2>
+    <div class="targets" id="targets"></div>
+  </div>
+</main>
+<div class="toast" id="toast"></div>
+
+<script>
+const $ = (s) => document.querySelector(s);
+const I18N = {
+  en: { subtitle:"/ target loader", nav_console:"◂ Console",
+    safety:"Targets are deliberately vulnerable. They are always published on 127.0.0.1 only. To attack from another machine, put both on a dedicated isolated network with no internet route — never your normal Wi-Fi.",
+    engine_title:"Capture engine (process & network telemetry)",
+    engine_on:"running", engine_off:"stopped",
+    engine_start:"Start engine", engine_stop:"Stop engine",
+    engine_hint_on:"Full telemetry: processes, tree and connections are captured.",
+    engine_hint_off:"Off — only HTTP telemetry is captured. Start it for RCE/privesc reconstruction.",
+    add_title:"Load a target", f_name:"Name", f_type:"Source",
+    type_image:"Docker image", type_build:"Build from Dockerfile",
+    f_image:"Image name", f_path:"Folder with a Dockerfile", f_cport:"Container port", f_hport:"Host port",
+    add_btn:"Add target", list_title:"Targets", empty:"No targets yet — load one above.",
+    b_start:"Start", b_stop:"Stop", b_delete:"Delete", b_open:"Open case ▸",
+    st_run:"running", st_stop:"stopped", st_err:"error",
+    working:"working…", confirm_del:"Delete this target?",
+  },
+  ru: { subtitle:"/ загрузка целей", nav_console:"◂ Консоль",
+    safety:"Цели специально уязвимы. Они всегда публикуются только на 127.0.0.1. Чтобы атаковать с другого ноута — выделенная изолированная сеть без выхода в интернет, никогда не обычный Wi-Fi.",
+    engine_title:"Движок захвата (телеметрия процессов и сети)",
+    engine_on:"запущен", engine_off:"остановлен",
+    engine_start:"Запустить движок", engine_stop:"Остановить движок",
+    engine_hint_on:"Полная телеметрия: процессы, дерево и соединения собираются.",
+    engine_hint_off:"Выключен — собирается только HTTP. Включите для реконструкции RCE/privesc.",
+    add_title:"Загрузить цель", f_name:"Название", f_type:"Источник",
+    type_image:"Docker-образ", type_build:"Сборка из Dockerfile",
+    f_image:"Имя образа", f_path:"Папка с Dockerfile", f_cport:"Порт контейнера", f_hport:"Порт хоста",
+    add_btn:"Добавить цель", list_title:"Цели", empty:"Пока нет целей — загрузите выше.",
+    b_start:"Запустить", b_stop:"Остановить", b_delete:"Удалить", b_open:"Открыть дело ▸",
+    st_run:"запущена", st_stop:"остановлена", st_err:"ошибка",
+    working:"выполняется…", confirm_del:"Удалить эту цель?",
+  },
+  kz: { subtitle:"/ нысандарды жүктеу", nav_console:"◂ Консоль",
+    safety:"Нысандар әдейі осал. Олар әрқашан тек 127.0.0.1-де жарияланады. Басқа ноутбуктан шабуылдау үшін — интернетсіз оқшауланған жеке желі, ешқашан әдеттегі Wi-Fi емес.",
+    engine_title:"Түсіру қозғалтқышы (процесс пен желі телеметриясы)",
+    engine_on:"қосулы", engine_off:"тоқтатылған",
+    engine_start:"Қозғалтқышты қосу", engine_stop:"Қозғалтқышты тоқтату",
+    engine_hint_on:"Толық телеметрия: процестер, ағаш және байланыстар жиналады.",
+    engine_hint_off:"Өшірулі — тек HTTP жиналады. RCE/privesc қайта құру үшін қосыңыз.",
+    add_title:"Нысанды жүктеу", f_name:"Атауы", f_type:"Дереккөз",
+    type_image:"Docker образы", type_build:"Dockerfile-ден құрастыру",
+    f_image:"Образ атауы", f_path:"Dockerfile бар қалта", f_cport:"Контейнер порты", f_hport:"Хост порты",
+    add_btn:"Нысан қосу", list_title:"Нысандар", empty:"Әзірге нысан жоқ — жоғарыда жүктеңіз.",
+    b_start:"Қосу", b_stop:"Тоқтату", b_delete:"Жою", b_open:"Істі ашу ▸",
+    st_run:"қосулы", st_stop:"тоқтатылған", st_err:"қате",
+    working:"орындалуда…", confirm_del:"Бұл нысанды жою керек пе?",
+  },
+};
+let lang = localStorage.getItem('bb_lang') || 'ru'; if (!I18N[lang]) lang = 'en';
+const t = (k) => (I18N[lang] && I18N[lang][k]) || I18N.en[k] || k;
+const esc = (s) => String(s).replace(/[&<>"]/g, (c)=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+function applyI18n() {
+  document.documentElement.lang = lang;
+  document.querySelectorAll('[data-i18n]').forEach((el)=> el.textContent = t(el.dataset.i18n));
+  document.querySelectorAll('#lang button').forEach((b)=> b.classList.toggle('on', b.dataset.lang===lang));
+}
+let toastTimer;
+function toast(msg, err) {
+  const el = $('#toast'); el.textContent = msg; el.classList.toggle('err', !!err); el.classList.add('show');
+  clearTimeout(toastTimer); toastTimer = setTimeout(()=> el.classList.remove('show'), 3500);
+}
+async function api(method, path, body) {
+  const opt = { method, headers: {} };
+  if (body) { opt.headers['Content-Type']='application/json'; opt.body=JSON.stringify(body); }
+  const res = await fetch(path, opt);
+  if (res.status === 204) return null;
+  const data = await res.json().catch(()=> ({}));
+  if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`);
+  return data;
+}
+
+let sensorOn = false;
+async function loadSensor() {
+  try { const s = await api('GET','/sensor'); sensorOn = !!s.running; } catch { sensorOn = false; }
+  renderSensor();
+}
+function renderSensor() {
+  $('#engineDot').className = 'dot ' + (sensorOn ? 'on':'off');
+  $('#engineState').textContent = sensorOn ? t('engine_on') : t('engine_off');
+  $('#engineBtn').textContent = sensorOn ? t('engine_stop') : t('engine_start');
+  $('#engineHint').textContent = sensorOn ? t('engine_hint_on') : t('engine_hint_off');
+}
+
+async function loadTargets() {
+  let list = [];
+  try { list = await api('GET','/targets'); } catch (e) { toast(e.message, true); }
+  const box = $('#targets');
+  if (!list.length) { box.innerHTML = `<div class="empty">${esc(t('empty'))}</div>`; return; }
+  box.innerHTML = list.map(cardHtml).join('');
+  box.querySelectorAll('[data-act]').forEach((b)=> b.addEventListener('click', onAction));
+}
+function cardHtml(x) {
+  const st = x.running ? 'run' : (x.status==='error' ? 'err':'stop');
+  const stWord = x.running ? 'st_run' : (x.status==='error' ? 'st_err':'st_stop');
+  const src = x.source.type==='image' ? `<code>${esc(x.source.image)}</code>`
+            : `Dockerfile · <code>${esc(x.source.path)}</code>`;
+  const url = x.running ? ` · <code>${esc(x.url||('http://127.0.0.1:'+x.host_port))}</code>` : '';
+  return `<div class="card">
+    <div class="main">
+      <div class="name">${esc(x.name)} <span class="badge ${st}">${esc(t(stWord))}</span></div>
+      <div class="meta">${src} · <code>127.0.0.1:${x.host_port}→${x.container_port}</code>${url}
+        · case <code>${esc(x.scenario_id)}</code></div>
+    </div>
+    <div class="actions">
+      ${x.running
+        ? `<button data-act="stop" data-id="${esc(x.id)}">${esc(t('b_stop'))}</button>`
+        : `<button class="primary" data-act="start" data-id="${esc(x.id)}">${esc(t('b_start'))}</button>`}
+      <a class="navlink" href="/ui/?case=${encodeURIComponent(x.scenario_id)}">${esc(t('b_open'))}</a>
+      <button class="danger" data-act="delete" data-id="${esc(x.id)}">${esc(t('b_delete'))}</button>
+    </div></div>`;
+}
+async function onAction(e) {
+  const btn = e.currentTarget, id = btn.dataset.id, act = btn.dataset.act;
+  if (act === 'delete' && !confirm(t('confirm_del'))) return;
+  const old = btn.textContent; btn.disabled = true; btn.textContent = t('working');
+  try {
+    if (act === 'start') await api('POST', `/targets/${id}/start`);
+    else if (act === 'stop') await api('POST', `/targets/${id}/stop`);
+    else if (act === 'delete') await api('DELETE', `/targets/${id}`);
+    await loadTargets();
+  } catch (err) { toast(err.message, true); btn.disabled = false; btn.textContent = old; }
+}
+
+$('#f_type').addEventListener('change', (e)=> {
+  const build = e.target.value === 'build';
+  $('#wrap_image').hidden = build; $('#wrap_path').hidden = !build;
+});
+$('#addForm').addEventListener('submit', async (e)=> {
+  e.preventDefault();
+  const type = $('#f_type').value;
+  const source = type === 'image'
+    ? { type:'image', image: $('#f_image').value.trim() }
+    : { type:'build', path: $('#f_path').value.trim() };
+  const body = { name: $('#f_name').value.trim(), source,
+    container_port: Number($('#f_cport').value) || 80 };
+  const hp = $('#f_hport').value.trim(); if (hp) body.host_port = Number(hp);
+  try {
+    await api('POST', '/targets', body);
+    $('#addForm').reset(); $('#wrap_image').hidden = false; $('#wrap_path').hidden = true;
+    await loadTargets();
+    toast('✓');
+  } catch (err) { toast(err.message, true); }
+});
+$('#engineBtn').addEventListener('click', async ()=> {
+  const btn = $('#engineBtn'); btn.disabled = true; btn.textContent = t('working');
+  try { await api('POST', sensorOn ? '/sensor/stop' : '/sensor/start'); await loadSensor(); }
+  catch (err) { toast(err.message, true); }
+  finally { btn.disabled = false; renderSensor(); await loadTargets(); }
+});
+$('#lang').addEventListener('click', (e)=> {
+  const b = e.target.closest('button[data-lang]'); if (!b) return;
+  lang = b.dataset.lang; localStorage.setItem('bb_lang', lang);
+  applyI18n(); renderSensor(); loadTargets();
+});
+$('#theme').addEventListener('click', ()=> {
+  const r = document.documentElement; r.dataset.theme = r.dataset.theme==='light' ? 'dark':'light';
+});
+
+(async function init(){ applyI18n(); await loadSensor(); await loadTargets(); })();
+</script>
+</body>
+</html>

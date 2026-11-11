@@ -48,6 +48,7 @@
     --c-low:    #86857c;
   }
   * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
   html, body { height: 100%; margin: 0; }
   body {
     font: 14px/1.5 ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
@@ -104,6 +105,10 @@
     color: var(--text-muted); font-size: 12px; font-weight: 700; letter-spacing: .03em; }
   .lang button.on { background: var(--accent); color: #fff; }
   .iconbtn { padding: 5px 8px; line-height: 1; }
+  .navlink { font: inherit; font-size: 13px; text-decoration: none; color: var(--text-1);
+    background: var(--surface-2); border: 1px solid var(--border); border-radius: 6px;
+    padding: 5px 11px; }
+  .navlink:hover { border-color: var(--text-muted); }
 
   /* ---------- layout ---------- */
   .console {
@@ -271,6 +276,7 @@
     <button data-lang="en">EN</button>
     <button data-lang="kz">KZ</button>
   </div>
+  <a href="/ui/targets.html" class="navlink" data-i18n="nav_targets"></a>
   <button id="theme" class="iconbtn" title="Theme">◐</button>
 </header>
 
@@ -360,6 +366,7 @@ const I18N = {
     f_status: "Status", f_srcip: "Source IP", f_dest: "Destination", f_proto: "Protocol", f_frompid: "From PID",
     view_graph: "Graph", view_timeline: "Timeline", integrity: "Evidence integrity",
     integrity_verified: "verified", integrity_broken: "TAMPERED", integrity_head: "head",
+    nav_targets: "Targets ▸",
   },
   ru: {
     subtitle: "/ консоль расследования", case: "Дело", reconstruction: "Реконструкция",
@@ -383,6 +390,7 @@ const I18N = {
     f_status: "Статус", f_srcip: "IP источника", f_dest: "Назначение", f_proto: "Протокол", f_frompid: "Из PID",
     view_graph: "Граф", view_timeline: "Таймлайн", integrity: "Целостность доказательств",
     integrity_verified: "подтверждена", integrity_broken: "НАРУШЕНА", integrity_head: "голова",
+    nav_targets: "Цели ▸",
   },
   kz: {
     subtitle: "/ тергеу консолі", case: "Іс", reconstruction: "Қайта құру",
@@ -406,6 +414,7 @@ const I18N = {
     f_status: "Мәртебе", f_srcip: "Бастау IP", f_dest: "Межелі", f_proto: "Хаттама", f_frompid: "PID-тен",
     view_graph: "Граф", view_timeline: "Уақыт сызбасы", integrity: "Дәлелдер тұтастығы",
     integrity_verified: "расталған", integrity_broken: "БҰЗЫЛҒАН", integrity_head: "бас",
+    nav_targets: "Нысандар ▸",
   },
 };
 let lang = localStorage.getItem('bb_lang') || 'ru';
@@ -472,6 +481,9 @@ async function loadScenarios() {
     o.value = s.scenario_id; o.textContent = `${s.scenario_id} · ${s.event_count}`;
     sel.appendChild(o);
   }
+  // optional ?case=<scenario> preselect (used by the target loader)
+  const want = new URLSearchParams(location.search).get('case');
+  if (want && list.some((s) => s.scenario_id === want)) sel.value = want;
   return list.length > 0;
 }
 async function loadCase() {
