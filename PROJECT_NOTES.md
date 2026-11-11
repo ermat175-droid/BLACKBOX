@@ -580,9 +580,33 @@ nothing to commit, working tree clean
   IOC (kprobe ловит `connect`), но не устанавливается.
 - Тесты: 60.
 
+## Day 9 — Обобщение движка (начато): мультиформатный HTTP-коллектор
+
+Тест на `ice-analytics` (uvicorn, атака **SSTI → RCE → SUID `rootbash`**)
+вскрыл переобучение на machine1: HTTP-коллектор понимал только Apache
+combined → uvicorn-логи (`INFO: ip:port - "GET /x HTTP/1.1" 200 OK`, без
+времени) давали **0 HTTP**; детекторы заточены под git/SQLi/вебшелл/
+PATH-hijack. Процессную телеметрию Tetragon при этом ловил полностью
+(`uvicorn→sh→cat /root/flag.txt`, `rootbash -p`).
+
+Сделано (шаг 1):
+- **HTTP-коллектор мультиформатный** (`http_log_collector.py`):
+  автоопределение строки, парсеры Apache/nginx combined + uvicorn/FastAPI;
+  формат без времени штампуется временем получения (как Tetragon).
+- В корреляции `WEB_SERVER_NAMES` расширен (`uvicorn/gunicorn/…`).
+- Проверено на ice-analytics: HTTP 0→20, появилась связь `spawned_by`,
+  реконструкция теперь показывает **T1059 RCE** (раньше не видела вообще).
+
+Осталось (шаг 2): детектор **SSTI** (`{{`, `__globals__`, `__import__`,
+`popen`, `system`); **RCE по процессам** (веб-сервер породил shell — даже
+без HTTP); **privesc шире** (SUID-шеллы `rootbash`/`-p`/в `/tmp`,`/var/tmp`,
+чтение `/root/*`, `/etc/shadow`). Тесты: 61.
+
 ## Что осталось
 
-1. **Compose как источник цели** — сейчас образ + одиночный Dockerfile;
+1. **Обобщить детекторы реконструкции** (SSTI, RCE-по-процессам, широкий
+   privesc) — см. Day 9, шаг 2. Движок переобучен на machine1.
+2. **Compose как источник цели** — сейчас образ + одиночный Dockerfile;
    многоконтейнерный `docker-compose` (выбор сервиса для мониторинга) —
    следующий шаг.
 2. **Red-team AI-агент** (Qwen) — **вне BLACKBOX**. Реализуется отдельно на
