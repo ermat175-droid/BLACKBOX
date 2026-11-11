@@ -67,6 +67,7 @@
   .badge { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.04em;
     padding:2px 8px; border-radius:999px; color:#fff; }
   .badge.run { background:var(--ok); } .badge.stop { background:var(--text-muted); } .badge.err { background:var(--bad); }
+  .badge.iso { background:var(--ok); } .badge.net { background:var(--warn); }
   .card .actions { display:flex; gap:7px; flex-wrap:wrap; justify-content:flex-end; }
   .empty { color:var(--text-muted); text-align:center; padding:26px; }
   .toast { position:fixed; bottom:18px; left:50%; transform:translateX(-50%);
@@ -120,6 +121,8 @@
         <input id="f_cport" type="number" value="80" min="1" max="65535"></label>
       <label class="f"><span data-i18n="f_hport"></span>
         <input id="f_hport" type="number" min="1" max="65535" placeholder="auto"></label>
+      <label class="f full" style="flex-direction:row; align-items:center; gap:8px; color:var(--text-1);">
+        <input type="checkbox" id="f_isolated" checked> <span data-i18n="f_isolated"></span></label>
       <div class="full"><button class="primary" type="submit" data-i18n="add_btn"></button></div>
     </form>
   </div>
@@ -149,6 +152,7 @@ const I18N = {
     st_run:"running", st_stop:"stopped", st_err:"error",
     working:"working…", confirm_del:"Delete this target?",
     img_pick:"— choose an image —", img_none:"no local images found",
+    f_isolated:"Isolate from the internet (recommended)", iso_on:"isolated", iso_off:"internet",
   },
   ru: { subtitle:"/ загрузка целей", nav_console:"◂ Консоль",
     safety:"Цели специально уязвимы. Они всегда публикуются только на 127.0.0.1. Чтобы атаковать с другого ноута — выделенная изолированная сеть без выхода в интернет, никогда не обычный Wi-Fi.",
@@ -165,6 +169,7 @@ const I18N = {
     st_run:"запущена", st_stop:"остановлена", st_err:"ошибка",
     working:"выполняется…", confirm_del:"Удалить эту цель?",
     img_pick:"— выберите образ —", img_none:"локальных образов не найдено",
+    f_isolated:"Изолировать от интернета (рекомендуется)", iso_on:"изолирована", iso_off:"интернет",
   },
   kz: { subtitle:"/ нысандарды жүктеу", nav_console:"◂ Консоль",
     safety:"Нысандар әдейі осал. Олар әрқашан тек 127.0.0.1-де жарияланады. Басқа ноутбуктан шабуылдау үшін — интернетсіз оқшауланған жеке желі, ешқашан әдеттегі Wi-Fi емес.",
@@ -181,6 +186,7 @@ const I18N = {
     st_run:"қосулы", st_stop:"тоқтатылған", st_err:"қате",
     working:"орындалуда…", confirm_del:"Бұл нысанды жою керек пе?",
     img_pick:"— образды таңдаңыз —", img_none:"жергілікті образдар табылмады",
+    f_isolated:"Интернеттен оқшаулау (ұсынылады)", iso_on:"оқшауланған", iso_off:"интернет",
   },
 };
 let lang = localStorage.getItem('bb_lang') || 'ru'; if (!I18N[lang]) lang = 'en';
@@ -235,7 +241,10 @@ function cardHtml(x) {
   const url = x.running ? ` · <code>${esc(x.url||('http://127.0.0.1:'+x.host_port))}</code>` : '';
   return `<div class="card">
     <div class="main">
-      <div class="name">${esc(x.name)} <span class="badge ${st}">${esc(t(stWord))}</span></div>
+      <div class="name">${esc(x.name)} <span class="badge ${st}">${esc(t(stWord))}</span>
+        ${x.isolated === false
+          ? `<span class="badge net">🌐 ${esc(t('iso_off'))}</span>`
+          : `<span class="badge iso">🔒 ${esc(t('iso_on'))}</span>`}</div>
       <div class="meta">${src} · <code>127.0.0.1:${x.host_port}→${x.container_port}</code>${url}
         · case <code>${esc(x.scenario_id)}</code></div>
     </div>
@@ -296,7 +305,8 @@ $('#addForm').addEventListener('submit', async (e)=> {
     ? { type:'image', image: $('#f_image').value.trim() }
     : { type:'build', path: $('#f_path').value.trim() };
   const body = { name: $('#f_name').value.trim(), source,
-    container_port: Number($('#f_cport').value) || 80 };
+    container_port: Number($('#f_cport').value) || 80,
+    isolated: $('#f_isolated').checked };
   const hp = $('#f_hport').value.trim(); if (hp) body.host_port = Number(hp);
   try {
     await api('POST', '/targets', body);

@@ -44,6 +44,10 @@ TENANT_PREFIX = "bb-tgt-"          # container/image name prefix for targets
 HOST_BIND = "127.0.0.1"            # never publish a vulnerable target wider
 PORT_BASE = 8100                   # auto-assigned host ports start here
 DOCKER = os.getenv("BLACKBOX_DOCKER", "docker")
+# Dedicated bridge with IP masquerade off: published ports (ingress) still
+# work, but the container cannot establish outbound internet connections —
+# so a compromised target cannot exfiltrate, pull tooling or attack others.
+LAB_NETWORK = os.getenv("BLACKBOX_LAB_NET", "bb-lab")
 
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 _lock = Lock()
@@ -106,18 +110,33 @@ def next_host_port(registry: list[dict], base: int = PORT_BASE) -> int:
     return port
 
 
-def run_argv(container: str, image: str, host_port: int, container_port: int) -> list[str]:
+def run_argv(container: str, image: str, host_port: int, container_port: int,
+             network: str | None = None) -> list[str]:
     """docker argv to run a target, always bound to localhost.
 
     ``--pull=never`` keeps the sandbox from reaching out to a registry: a
     lab target must already be present locally, and a missing one fails fast
     with a clear "image not found locally" instead of an internet pull.
+    ``network`` attaches the target to an isolated bridge (no egress).
     """
-    return [
-        DOCKER, "run", "-d", "--pull=never", "--name", container,
-        "-p", f"{HOST_BIND}:{host_port}:{container_port}",
-        image,
-    ]
+    argv = [DOCKER, "run", "-d", "--pull=never", "--name", container]
+    if network:
+        argv += ["--network", network]
+    argv += ["-p", f"{HOST_BIND}:{host_port}:{container_port}", image]
+    return argv
+
+
+def ensure_lab_network() -> None:
+    """Create the egress-blocked lab bridge if it does not exist (idempotent)."""
+    if _docker([DOCKER, "network", "inspect", LAB_NETWORK], timeout=15).returncode == 0:
+        return
+    r = _docker([
+        DOCKER, "network", "create",
+        "-o", "com.docker.network.bridge.enable_ip_masquerade=false",
+        LAB_NETWORK,
+    ], timeout=30)
+    if r.returncode != 0:
+        raise TargetError(f"cannot create lab network: {r.stderr.strip()[-300:]}")
 
 
 def build_argv(path: str, tag: str) -> list[str]:
@@ -235,7 +254,7 @@ def list_targets() -> list[dict]:
 
 
 def add_target(name: str, source: Any, container_port: int = 80,
-               host_port: Any = None) -> dict:
+               host_port: Any = None, isolated: bool = True) -> dict:
     source = validate_source(source)
     cport = _valid_port(container_port, "container_port")
     with _lock:
@@ -251,6 +270,7 @@ def add_target(name: str, source: Any, container_port: int = 80,
             "source": source,
             "host_port": hport,
             "container_port": cport,
+            "isolated": bool(isolated),
             "scenario_id": f"TGT-{slug}",
             "container": f"{TENANT_PREFIX}{slug}",
             "status": "stopped",
@@ -278,9 +298,17 @@ def start_target(target_id: str) -> dict:
         else:
             image = t["source"]["image"]
 
+        # Isolated targets run on an egress-blocked bridge so a compromised
+        # one cannot reach the internet; the published port still works.
+        network = None
+        if t.get("isolated", True):
+            ensure_lab_network()
+            network = LAB_NETWORK
+
         container = t["container"]
         _docker([DOCKER, "rm", "-f", container], timeout=30)  # idempotent
-        r = _docker(run_argv(container, image, t["host_port"], t["container_port"]))
+        r = _docker(run_argv(container, image, t["host_port"],
+                             t["container_port"], network))
         if r.returncode != 0:
             t["status"] = "error"
             _save(registry)

@@ -48,6 +48,13 @@ class TestPureHelpers(unittest.TestCase):
         # a lab target must be local; the sandbox must not reach a registry
         self.assertIn("--pull=never", tg.run_argv("bb-tgt-x", "img:latest", 8100, 80))
 
+    def test_run_argv_attaches_isolated_network(self):
+        argv = tg.run_argv("bb-tgt-x", "img:latest", 8100, 80, network="bb-lab")
+        self.assertIn("--network", argv)
+        self.assertEqual(argv[argv.index("--network") + 1], "bb-lab")
+        # and omits it when no network is given
+        self.assertNotIn("--network", tg.run_argv("bb-tgt-x", "img:latest", 8100, 80))
+
     def test_exposed_ports_parsing(self):
         self.assertEqual(tg._exposed_ports({"443/tcp": {}, "80/tcp": {}}), [80, 443])
         self.assertEqual(tg._exposed_ports({"8080/tcp": {}, "8080/udp": {}}), [8080])
@@ -80,6 +87,7 @@ class TestRegistry(unittest.TestCase):
         self.assertEqual(rec["container"], "bb-tgt-ice-portal")
         self.assertEqual(rec["host_port"], tg.PORT_BASE)
         self.assertEqual(rec["status"], "stopped")
+        self.assertTrue(rec["isolated"])  # isolated from the internet by default
         # persisted
         saved = json.loads(Path(self._tmp.name).read_text("utf-8"))
         self.assertEqual(len(saved), 1)
