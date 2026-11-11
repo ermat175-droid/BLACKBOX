@@ -1,3 +1,4 @@
+import threading
 from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
@@ -32,6 +33,13 @@ app = FastAPI(
     version="0.2.0",
     lifespan=lifespan,
 )
+
+
+# The chain of custody is append-only and order-sensitive: reading the
+# previous head and inserting the next link must not interleave across the
+# concurrent collector POSTs, or two events share a prev_hash and the chain
+# verifies as broken. Serialize that critical section.
+_ingest_lock = threading.Lock()
 
 
 def get_db():
@@ -130,16 +138,20 @@ def create_event(
     )
 
     # Append to the tamper-evident chain of custody (ingestion order).
-    prev_hash = db.scalar(
-        select(Event.chain_hash).order_by(Event.id.desc()).limit(1)
-    ) or GENESIS
-    content, chain = link(prev_hash, normalized)
-    event.content_hash = content
-    event.prev_hash = prev_hash
-    event.chain_hash = chain
+    # Reading the head and inserting the next link is serialized so
+    # concurrent collector POSTs cannot share a prev_hash.
+    with _ingest_lock:
+        prev_hash = db.scalar(
+            select(Event.chain_hash).order_by(Event.id.desc()).limit(1)
+        ) or GENESIS
+        content, chain = link(prev_hash, normalized)
+        event.content_hash = content
+        event.prev_hash = prev_hash
+        event.chain_hash = chain
 
-    db.add(event)
-    db.commit()
+        db.add(event)
+        db.commit()
+
     db.refresh(event)
 
     return to_response(event)
