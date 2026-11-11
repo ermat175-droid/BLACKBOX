@@ -1,4 +1,5 @@
 import unittest
+from datetime import datetime
 
 from backend.collector.tetragon_collector import map_event
 from backend.normalization import normalize_event
@@ -44,6 +45,14 @@ class TestTetragonCollector(unittest.TestCase):
         self.assertEqual(raw["data"]["parent_pid"], 324412)
         self.assertEqual(raw["data"]["scenario_id"], "BB-M1")
         self.assertEqual(raw["data"]["container_id"], "9c6810f2abd8")
+        # Canonical timestamp is the collector's receipt time (host clock),
+        # not Tetragon's drift-prone start_time, which is kept as evidence.
+        self.assertEqual(
+            raw["data"]["source_timestamp"], "2026-11-10T12:00:00.123Z"
+        )
+        self.assertNotEqual(raw["timestamp"], "2026-11-10T12:00:00.123Z")
+        # receipt time must be a parseable ISO timestamp
+        datetime.fromisoformat(raw["timestamp"])
 
     def test_mapped_event_normalizes_cleanly(self):
         """The collector output must survive the ingestion normalizer."""

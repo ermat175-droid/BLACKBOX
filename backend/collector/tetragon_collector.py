@@ -63,7 +63,7 @@ def _sock_arg(kprobe: dict) -> dict:
     return {}
 
 
-def _map_exec(exec_: dict, scenario_id: str | None) -> dict:
+def _map_exec(exec_: dict, scenario_id: str | None, received_at: str) -> dict:
     process = exec_.get("process") or {}
     parent = exec_.get("parent") or {}
     container_id = _container_id(process)
@@ -72,7 +72,14 @@ def _map_exec(exec_: dict, scenario_id: str | None) -> dict:
         "event_id": process.get("exec_id"),
         "source": "tetragon",
         "event_type": "process_created",
-        "timestamp": process.get("start_time"),
+        # Stamp with the collector's own wall clock at receipt rather than
+        # Tetragon's reported start_time: Tetragon reconstructs wall time
+        # from a boot-time offset captured at startup, which drifts by the
+        # suspend duration across a laptop suspend/resume and would push
+        # process events minutes away from the host-clock HTTP log, breaking
+        # time correlation. The kernel-reported start_time is kept as
+        # evidence in source_timestamp.
+        "timestamp": received_at,
         "severity": "info",
         "data": {
             "scenario_id": scenario_id,
@@ -84,11 +91,14 @@ def _map_exec(exec_: dict, scenario_id: str | None) -> dict:
             "parent_process_name": _posix_name(parent.get("binary")),
             "uid": process.get("uid"),
             "container_id": container_id,
+            "source_timestamp": process.get("start_time"),
         },
     }
 
 
-def _map_connect(kprobe: dict, time: str | None, scenario_id: str | None) -> dict:
+def _map_connect(
+    kprobe: dict, time: str | None, scenario_id: str | None, received_at: str
+) -> dict:
     process = kprobe.get("process") or {}
     container_id = _container_id(process)
     sock = _sock_arg(kprobe)
@@ -104,7 +114,9 @@ def _map_connect(kprobe: dict, time: str | None, scenario_id: str | None) -> dic
         "event_id": event_id,
         "source": "tetragon",
         "event_type": "network_connection",
-        "timestamp": time,
+        # Receipt time on the collector's clock; see _map_exec for why
+        # Tetragon's own event time is not trusted for correlation.
+        "timestamp": received_at,
         "severity": "warning",
         "data": {
             "scenario_id": scenario_id,
@@ -116,6 +128,7 @@ def _map_connect(kprobe: dict, time: str | None, scenario_id: str | None) -> dic
             "destination_ip": sock.get("daddr"),
             "destination_port": sock.get("dport"),
             "protocol": proto,
+            "source_timestamp": time,
         },
     }
 
@@ -127,13 +140,20 @@ def map_event(tetra_event: dict, scenario_id: str | None) -> dict | None:
     (outbound network connections). Returns None for other kinds.
     """
 
+    # The collector observes events in near-real time, so "now" is a
+    # trustworthy wall-clock stamp on the host's clock — the same clock the
+    # Apache log collector uses — which keeps the two sources correlatable.
+    received_at = datetime.now(timezone.utc).isoformat()
+
     exec_ = tetra_event.get("process_exec")
     if exec_ is not None:
-        return _map_exec(exec_, scenario_id)
+        return _map_exec(exec_, scenario_id, received_at)
 
     kprobe = tetra_event.get("process_kprobe")
     if kprobe is not None and kprobe.get("function_name") == "tcp_connect":
-        return _map_connect(kprobe, tetra_event.get("time"), scenario_id)
+        return _map_connect(
+            kprobe, tetra_event.get("time"), scenario_id, received_at
+        )
 
     return None
 
