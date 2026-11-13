@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import Body, Depends, FastAPI, HTTPException, Query
+from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -20,6 +21,7 @@ from backend.reconstruction import reconstruct
 from backend.infrastructure import discover, impact
 from backend.validation import validate
 from backend.defense import generate_rules
+from backend.report import build_report, to_html
 from backend.schemas import EventResponse
 from backend import targets as targets_mod
 
@@ -43,6 +45,9 @@ app = FastAPI(
 # concurrent collector POSTs, or two events share a prev_hash and the chain
 # verifies as broken. Serialize that critical section.
 _ingest_lock = threading.Lock()
+
+# Last blind-validation result per scenario, so the report can include it.
+_last_validation: dict[str, dict] = {}
 
 
 def get_db():
@@ -341,7 +346,33 @@ def incident_validate(
     result = validate(actions, events, recon)
     result["scenario_id"] = scenario_id
     result["attacker"] = body.get("attacker")
+    _last_validation[scenario_id] = result
     return result
+
+
+def _assemble_report(scenario_id: str, db: Session, lang: str) -> dict:
+    events = _events_for(scenario_id, db)
+    recon = reconstruct(events, correlate(events))
+    integ = verify_chain(list(db.scalars(select(Event).order_by(Event.id))))
+    integ["genesis"] = GENESIS
+    return build_report(
+        scenario_id=scenario_id, recon=recon,
+        impact=impact(events, recon), infrastructure=discover(events, recon),
+        rules=generate_rules(recon), integrity=integ,
+        validation=_last_validation.get(scenario_id), lang=lang,
+    )
+
+
+@app.get("/incidents/{scenario_id}/report.json")
+def incident_report_json(scenario_id: str, lang: str = "en",
+                         db: Session = Depends(get_db)):
+    return _assemble_report(scenario_id, db, lang)
+
+
+@app.get("/incidents/{scenario_id}/report", response_class=HTMLResponse)
+def incident_report_html(scenario_id: str, lang: str = "en",
+                         db: Session = Depends(get_db)):
+    return to_html(_assemble_report(scenario_id, db, lang))
 
 
 @app.get("/incidents/{scenario_id}/reconstruction")
