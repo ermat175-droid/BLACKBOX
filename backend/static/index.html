@@ -216,6 +216,24 @@
   .asset-legend .s { width: 12px; height: 12px; border-radius: 3px; display:inline-block; }
   .s.normal { background: var(--c-high); } .s.touched { background: var(--c-medium); }
   .s.compromised { background: var(--edge-spawned); }
+  /* rules view */
+  .rules { position: absolute; inset: 0; overflow: auto; padding: 54px 18px 18px; }
+  .rulecard { border: 1px solid var(--border); border-radius: 10px; background: var(--surface-1);
+    margin-bottom: 12px; overflow: hidden; }
+  .rulecard .rh { display: flex; align-items: center; gap: 9px; padding: 9px 13px;
+    background: var(--surface-2); border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+  .rulecard .rh .fmt { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em;
+    padding: 2px 7px; border-radius: 5px; color: #fff; }
+  .fmt.sigma { background: var(--process); } .fmt.tetragon { background: var(--network); }
+  .rulecard .rh .rt { font-weight: 650; font-size: 13.5px; }
+  .rulecard .rh code { font-family: ui-monospace, Menlo, monospace; font-size: 11px;
+    background: var(--surface-3); padding: 1px 5px; border-radius: 4px; }
+  .rulecard .rh .enf { color: #fff; background: var(--edge-spawned); font-size: 10px; font-weight: 700;
+    padding: 2px 7px; border-radius: 999px; text-transform: uppercase; letter-spacing: .04em; }
+  .rulecard .rh .copy { margin-left: auto; font-size: 11px; padding: 3px 9px; }
+  .rulecard pre { margin: 0; padding: 11px 13px; font-family: ui-monospace, Menlo, monospace;
+    font-size: 11.5px; line-height: 1.45; white-space: pre-wrap; word-break: break-word;
+    color: var(--text-2); background: var(--surface-0); }
 
   /* ---------- timeline ---------- */
   .timeline { position: absolute; inset: 0; overflow: auto; padding: 54px 18px 18px; }
@@ -303,6 +321,7 @@
     <button data-lang="kz">KZ</button>
   </div>
   <a href="/ui/targets.html" class="navlink" data-i18n="nav_targets"></a>
+  <a href="#" id="reportLink" class="navlink" target="_blank" data-i18n="nav_report"></a>
   <button id="theme" class="iconbtn" title="Theme">◐</button>
 </header>
 
@@ -326,6 +345,7 @@
     <div id="cy"></div>
     <div class="timeline" id="timeline" hidden></div>
     <div id="infra" hidden></div>
+    <div class="rules" id="rules" hidden></div>
     <div class="impact-banner" id="impactBanner" hidden></div>
     <div class="graph-empty" id="graphEmpty">…</div>
     <div class="graph-toolbar">
@@ -333,6 +353,7 @@
         <button data-view="infra" class="on" data-i18n="view_infra"></button>
         <button data-view="graph" data-i18n="view_graph"></button>
         <button data-view="timeline" data-i18n="view_timeline"></button>
+        <button data-view="rules" data-i18n="view_rules"></button>
       </div>
       <label class="ctl live" title="Auto-refresh while attacking">
         <input type="checkbox" id="live"> <span class="livedot"></span><span data-i18n="live"></span>
@@ -398,7 +419,7 @@ const I18N = {
     f_status: "Status", f_srcip: "Source IP", f_dest: "Destination", f_proto: "Protocol", f_frompid: "From PID",
     view_graph: "Graph", view_timeline: "Timeline", integrity: "Evidence integrity",
     integrity_verified: "verified", integrity_broken: "TAMPERED", integrity_head: "head",
-    nav_targets: "Targets ▸",
+    nav_targets: "Targets ▸", nav_report: "Report ▸", view_rules: "Defences", rules_enforce: "ENFORCE — blocks", rules_none: "No defences generated.", copy: "copy", copied: "copied",
     graph_empty_hint: "Nothing correlated to show in Focus. Start the capture engine before attacking (for process telemetry), or turn off Focus to see all requests.",
     view_infra: "Infrastructure", live: "LIVE", imp_rce: "code execution", imp_root: "root achieved", imp_secrets: "{n} secret(s) read", imp_egress: "{n} egress attempt(s)", imp_clean: "no impact detected yet", a_normal: "normal", a_touched: "touched", a_compromised: "compromised",
   },
@@ -424,7 +445,7 @@ const I18N = {
     f_status: "Статус", f_srcip: "IP источника", f_dest: "Назначение", f_proto: "Протокол", f_frompid: "Из PID",
     view_graph: "Граф", view_timeline: "Таймлайн", integrity: "Целостность доказательств",
     integrity_verified: "подтверждена", integrity_broken: "НАРУШЕНА", integrity_head: "голова",
-    nav_targets: "Цели ▸",
+    nav_targets: "Цели ▸", nav_report: "Отчёт ▸", view_rules: "Защита", rules_enforce: "ENFORCE — блокирует", rules_none: "Правила не сгенерированы.", copy: "копировать", copied: "скопировано",
     graph_empty_hint: "В «Фокусе» нет связанной активности. Запустите движок захвата до атаки (для телеметрии процессов) или снимите «Фокус», чтобы увидеть все запросы.",
     view_infra: "Инфраструктура", live: "LIVE", imp_rce: "выполнение кода", imp_root: "получен root", imp_secrets: "прочитано секретов: {n}", imp_egress: "исходящих попыток: {n}", imp_clean: "ущерба пока не обнаружено", a_normal: "норма", a_touched: "затронут", a_compromised: "скомпрометирован",
   },
@@ -450,7 +471,7 @@ const I18N = {
     f_status: "Мәртебе", f_srcip: "Бастау IP", f_dest: "Межелі", f_proto: "Хаттама", f_frompid: "PID-тен",
     view_graph: "Граф", view_timeline: "Уақыт сызбасы", integrity: "Дәлелдер тұтастығы",
     integrity_verified: "расталған", integrity_broken: "БҰЗЫЛҒАН", integrity_head: "бас",
-    nav_targets: "Нысандар ▸",
+    nav_targets: "Нысандар ▸", nav_report: "Есеп ▸", view_rules: "Қорғаныс", rules_enforce: "ENFORCE — бөгейді", rules_none: "Ережелер жасалмады.", copy: "көшіру", copied: "көшірілді",
     graph_empty_hint: "«Фокуста» байланысқан әрекет жоқ. Шабуылдан бұрын түсіру қозғалтқышын қосыңыз (процесс телеметриясы үшін) немесе барлық сұрауларды көру үшін «Фокусты» алыңыз.",
     view_infra: "Инфрақұрылым", live: "LIVE", imp_rce: "код орындау", imp_root: "root алынды", imp_secrets: "{n} құпия оқылды", imp_egress: "{n} шығыс әрекет", imp_clean: "әзірге зиян жоқ", a_normal: "қалыпты", a_touched: "тиіскен", a_compromised: "бұзылған",
   },
@@ -468,7 +489,7 @@ const L = (dict) => (dict && (dict[lang] || dict.en)) || '';
 const hiddenEdges = new Set();
 let cy = null, graph = null, recon = null, nodeById = {}, activeStage = null, activeNode = null;
 let timeline = null, integrityData = null, view = 'infra';
-let cyInfra = null, infra = null, impactData = null, liveTimer = null, prevStatus = {};
+let cyInfra = null, infra = null, impactData = null, liveTimer = null, prevStatus = {}, rulesData = null;
 
 /* ---------- utils ---------- */
 function escapeHtml(s) {
@@ -528,18 +549,19 @@ async function loadScenarios() {
 async function loadCase() {
   const sid = $('#scenario').value; if (!sid) return;
   activeStage = null; activeNode = null;
-  const [g, r, tl, integ, inf, imp] = await Promise.all([
+  const [g, r, tl, integ, inf, imp, rul] = await Promise.all([
     fetch(`/incidents/${encodeURIComponent(sid)}/graph`).then(x => x.ok ? x.json() : null),
     fetch(`/incidents/${encodeURIComponent(sid)}/reconstruction`).then(x => x.ok ? x.json() : null),
     fetch(`/incidents/${encodeURIComponent(sid)}/timeline`).then(x => x.ok ? x.json() : null),
     fetch('/integrity').then(x => x.ok ? x.json() : null),
     fetch(`/incidents/${encodeURIComponent(sid)}/infrastructure`).then(x => x.ok ? x.json() : null),
     fetch(`/incidents/${encodeURIComponent(sid)}/impact`).then(x => x.ok ? x.json() : null),
+    fetch(`/incidents/${encodeURIComponent(sid)}/rules`).then(x => x.ok ? x.json() : null),
   ]);
-  graph = g; recon = r; timeline = tl; integrityData = integ; infra = inf; impactData = imp; nodeById = {};
+  graph = g; recon = r; timeline = tl; integrityData = integ; infra = inf; impactData = imp; rulesData = rul; nodeById = {};
   if (g) g.nodes.forEach((n) => nodeById[n.id] = n);
   renderVerdict(); renderIntegrity(); renderStory(); renderGraph(); renderTimeline();
-  renderInfra(); renderImpact(); resetEvidence();
+  renderInfra(); renderImpact(); renderRules(); updateReportLink(); resetEvidence();
   const m = /stage=([\w-]+)/.exec(location.hash);
   if (m && recon && recon.stages.some((s) => s.key === m[1])) selectStage(m[1]);
 }
@@ -628,9 +650,11 @@ function buildInfraStyle() {
     { selector: 'node', style: {
         'background-color': (n) => statusColor(n.data('status')),
         'shape': (n) => assetShape(n.data('type')),
-        'label': 'data(short)', 'color': css('--text-1'), 'font-size': 12,
-        'text-valign': 'bottom', 'text-margin-y': 6, 'text-wrap': 'wrap', 'text-max-width': 130,
-        'width': 34, 'height': 34, 'border-width': 2, 'border-color': css('--surface-0') }},
+        'label': 'data(short)', 'color': css('--text-1'), 'font-size': 10,
+        'text-valign': 'bottom', 'text-margin-y': 6, 'text-wrap': 'wrap', 'text-max-width': 100,
+        'text-background-color': css('--surface-0'), 'text-background-opacity': 0.75,
+        'text-background-padding': 2,
+        'width': 30, 'height': 30, 'border-width': 2, 'border-color': css('--surface-0') }},
     { selector: 'node:selected', style: { 'border-width': 3, 'border-color': css('--text-1') }},
     { selector: 'edge', style: {
         'width': 2, 'line-color': css('--border'), 'target-arrow-shape': 'triangle',
@@ -639,7 +663,7 @@ function buildInfraStyle() {
 }
 function renderInfra() {
   if (!infra) { if (cyInfra) { cyInfra.destroy(); cyInfra = null; } return; }
-  const short = (s) => (s || '').length > 22 ? s.slice(0, 21) + '…' : s;
+  const short = (s) => (s || '').length > 18 ? s.slice(0, 17) + '…' : s;
   const elements = [
     ...infra.assets.map((a) => ({ data: { ...a, short: short(a.label) } })),
     ...infra.links.map((l, i) => ({ data: { id: 'il' + i, ...l } })),
@@ -647,8 +671,9 @@ function renderInfra() {
   const newStatus = {}; infra.assets.forEach((a) => newStatus[a.id] = a.status);
   if (cyInfra) cyInfra.destroy();
   cyInfra = cytoscape({ container: $('#infra'), elements, style: buildInfraStyle(),
-    layout: { name: 'breadthfirst', directed: true, spacingFactor: 1.35, padding: 46,
-              animate: true, animationDuration: 300 }, wheelSensitivity: 0.2 });
+    layout: { name: 'breadthfirst', directed: true, spacingFactor: 1.9, padding: 60,
+              animate: true, animationDuration: 300 },
+    wheelSensitivity: 0.2, minZoom: 0.2, maxZoom: 1.25 });
   cyInfra.on('tap', 'node', (ev) => showAssetEvidence(ev.target.data()));
   // flash assets that just became compromised (live attack effect)
   infra.assets.forEach((a) => {
@@ -685,12 +710,42 @@ function showAssetEvidence(a) {
   wireEvItems();
 }
 
+/* ---------- defences (rules) ---------- */
+function renderRules() {
+  const box = $('#rules');
+  if (!rulesData || !rulesData.rules.length) {
+    box.innerHTML = `<div class="placeholder">${escapeHtml(t('rules_none'))}</div>`; return;
+  }
+  box.innerHTML = rulesData.rules.map((r, i) => `
+    <div class="rulecard">
+      <div class="rh">
+        <span class="fmt ${r.format}">${escapeHtml(r.format)}</span>
+        <span class="rt">${escapeHtml(r.title)}</span>
+        <code>${escapeHtml(r.technique)}</code>
+        ${r.enforces ? `<span class="enf">${escapeHtml(t('rules_enforce'))}</span>` : ''}
+        <button class="copy" data-i="${i}">${escapeHtml(t('copy'))}</button>
+      </div>
+      <pre id="rl${i}">${escapeHtml(r.yaml)}</pre>
+    </div>`).join('');
+  box.querySelectorAll('.copy').forEach((b) => b.addEventListener('click', () => {
+    const txt = rulesData.rules[+b.dataset.i].yaml;
+    navigator.clipboard && navigator.clipboard.writeText(txt);
+    b.textContent = t('copied'); setTimeout(() => b.textContent = t('copy'), 1200);
+  }));
+}
+function updateReportLink() {
+  const sid = $('#scenario').value;
+  $('#reportLink').href = sid
+    ? `/incidents/${encodeURIComponent(sid)}/report?lang=${lang}` : '#';
+}
+
 /* ---------- view switch ---------- */
 function setView(v) {
   view = v;
   $('#cy').hidden = v !== 'graph';
   $('#timeline').hidden = v !== 'timeline';
   $('#infra').hidden = v !== 'infra';
+  $('#rules').hidden = v !== 'rules';
   document.querySelector('.legend').style.display = v === 'graph' ? '' : 'none';
   $('#fit').style.display = (v === 'graph' || v === 'infra') ? '' : 'none';
   document.querySelectorAll('#viewswitch button').forEach((b) => b.classList.toggle('on', b.dataset.view === v));
@@ -888,6 +943,7 @@ function row(dt, dd, mono) {
 /* ---------- re-render on language change ---------- */
 function rerenderDynamic() {
   renderVerdict(); renderIntegrity(); renderStory(); renderTimeline(); renderImpact();
+  renderRules(); updateReportLink();
   if (activeStage) { markTimelineStage(activeStage); showStageEvidence(activeStage); }
   else if (activeNode) showNodeEvidence(activeNode);
   else resetEvidence();
@@ -971,7 +1027,7 @@ $('#reopenRight').addEventListener('click', () => setCollapsed('right', false));
   }
   await loadCase();
   const wantView = qs.get('view');
-  setView(['graph', 'timeline', 'infra'].includes(wantView) ? wantView : 'infra');
+  setView(['graph', 'timeline', 'infra', 'rules'].includes(wantView) ? wantView : 'infra');
   if (qs.get('live') === '1') setLive(true);
 })();
 </script>
