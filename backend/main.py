@@ -17,6 +17,7 @@ from backend.integrity import GENESIS, link, verify_chain
 from backend.models import Event
 from backend.normalization import normalize_event
 from backend.reconstruction import reconstruct
+from backend.infrastructure import discover, impact
 from backend.schemas import EventResponse
 from backend import targets as targets_mod
 
@@ -282,6 +283,36 @@ def incident_timeline(scenario_id: str, db: Session = Depends(get_db)):
         "stage_count": recon["stage_count"],
         "entries": entries,
     }
+
+
+def _events_for(scenario_id: str, db: Session) -> list[dict]:
+    rows = db.scalars(
+        select(Event).where(Event.scenario_id == scenario_id)
+        .order_by(Event.timestamp, Event.id)
+    )
+    events = [e.normalized for e in rows]
+    if not events:
+        raise HTTPException(
+            status_code=404, detail=f"No events for scenario {scenario_id}")
+    return events
+
+
+@app.get("/incidents/{scenario_id}/infrastructure")
+def incident_infrastructure(scenario_id: str, db: Session = Depends(get_db)):
+    events = _events_for(scenario_id, db)
+    recon = reconstruct(events, correlate(events))
+    result = discover(events, recon)
+    result["scenario_id"] = scenario_id
+    return result
+
+
+@app.get("/incidents/{scenario_id}/impact")
+def incident_impact(scenario_id: str, db: Session = Depends(get_db)):
+    events = _events_for(scenario_id, db)
+    recon = reconstruct(events, correlate(events))
+    result = impact(events, recon)
+    result["scenario_id"] = scenario_id
+    return result
 
 
 @app.get("/incidents/{scenario_id}/reconstruction")
