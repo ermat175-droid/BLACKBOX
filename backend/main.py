@@ -18,6 +18,7 @@ from backend.models import Event
 from backend.normalization import normalize_event
 from backend.reconstruction import reconstruct
 from backend.infrastructure import discover, impact
+from backend.validation import validate
 from backend.schemas import EventResponse
 from backend import targets as targets_mod
 
@@ -312,6 +313,24 @@ def incident_impact(scenario_id: str, db: Session = Depends(get_db)):
     recon = reconstruct(events, correlate(events))
     result = impact(events, recon)
     result["scenario_id"] = scenario_id
+    return result
+
+
+@app.post("/incidents/{scenario_id}/validate")
+def incident_validate(
+    scenario_id: str,
+    body: dict[str, Any] = Body(...),
+    db: Session = Depends(get_db),
+):
+    """Validate the reconstruction against an attacker-submitted action log."""
+    actions = body.get("actions")
+    if not isinstance(actions, list):
+        raise HTTPException(status_code=422, detail="body.actions must be a list")
+    events = _events_for(scenario_id, db)
+    recon = reconstruct(events, correlate(events))
+    result = validate(actions, events, recon)
+    result["scenario_id"] = scenario_id
+    result["attacker"] = body.get("attacker")
     return result
 
 

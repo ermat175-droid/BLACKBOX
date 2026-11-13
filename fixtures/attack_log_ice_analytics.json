@@ -1,0 +1,10 @@
+{
+  "scenario_id": "TGT-test",
+  "attacker": "solve.py machine3_analytics",
+  "actions": [
+    {"technique": "T1190", "kind": "ssti", "marker": "/export/generate-pdf", "note": "Jinja2 SSTI in report_title"},
+    {"technique": "T1059", "kind": "rce", "marker": "/root/flag.txt", "note": "RCE via SSTI, read flag"},
+    {"technique": "T1548", "kind": "privesc", "marker": "rootbash", "note": "SUID rootbash -p"},
+    {"technique": "T1005", "kind": "collection", "marker": "/root/flag.txt", "note": "exfiltrate flag"}
+  ]
+}
