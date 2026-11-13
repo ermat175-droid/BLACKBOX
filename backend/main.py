@@ -22,6 +22,7 @@ from backend.infrastructure import discover, impact
 from backend.validation import validate
 from backend.defense import generate_rules
 from backend.report import build_report, to_html
+from backend import enforce as enforce_mod
 from backend.schemas import EventResponse
 from backend import targets as targets_mod
 
@@ -327,6 +328,40 @@ def incident_rules(scenario_id: str, db: Session = Depends(get_db)):
     events = _events_for(scenario_id, db)
     recon = reconstruct(events, correlate(events))
     result = generate_rules(recon)
+    result["scenario_id"] = scenario_id
+    return result
+
+
+@app.get("/incidents/{scenario_id}/enforce")
+def incident_enforce_status(scenario_id: str, db: Session = Depends(get_db)):
+    events = _events_for(scenario_id, db)
+    recon = reconstruct(events, correlate(events))
+    status = enforce_mod.enforcement_status(scenario_id)
+    status["blockable"] = enforce_mod.enforce_targets(recon, events)
+    status["scenario_id"] = scenario_id
+    return status
+
+
+@app.post("/incidents/{scenario_id}/enforce")
+def incident_enforce(scenario_id: str, db: Session = Depends(get_db)):
+    """Arm a kernel kill-policy against this incident's attack-artifact binaries."""
+    events = _events_for(scenario_id, db)
+    recon = reconstruct(events, correlate(events))
+    binaries = enforce_mod.enforce_targets(recon, events)
+    try:
+        result = enforce_mod.apply_enforcement(scenario_id, binaries)
+    except enforce_mod.TargetError as error:
+        raise HTTPException(status_code=400, detail=str(error))
+    result["scenario_id"] = scenario_id
+    return result
+
+
+@app.delete("/incidents/{scenario_id}/enforce")
+def incident_unenforce(scenario_id: str):
+    try:
+        result = enforce_mod.remove_enforcement(scenario_id)
+    except enforce_mod.TargetError as error:
+        raise HTTPException(status_code=400, detail=str(error))
     result["scenario_id"] = scenario_id
     return result
 
