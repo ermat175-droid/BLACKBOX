@@ -245,6 +245,9 @@
   .st.off { background: var(--surface-3); color: var(--text-muted); }
   .st.on { background: var(--edge-spawned); color: #fff; }
   .enforce-panel .bins { font-family: ui-monospace, Menlo, monospace; font-size: 12px; color: var(--text-2); }
+  .enforce-panel .blocked { font-size: 11px; font-weight: 800; text-transform: uppercase;
+    letter-spacing: .4px; color: #fff; background: #d12b2b; border-radius: 999px;
+    padding: 3px 10px; white-space: nowrap; }
   .enforce-panel .spacer { flex: 1; }
   .enforce-panel button { padding: 6px 13px; font-weight: 650; }
   .enforce-panel button.arm { background: var(--edge-spawned); border-color: var(--edge-spawned); color: #fff; }
@@ -434,7 +437,7 @@ const I18N = {
     f_status: "Status", f_srcip: "Source IP", f_dest: "Destination", f_proto: "Protocol", f_frompid: "From PID",
     view_graph: "Graph", view_timeline: "Timeline", integrity: "Evidence integrity",
     integrity_verified: "verified", integrity_broken: "TAMPERED", integrity_head: "head",
-    nav_targets: "Targets ▸", nav_report: "Report ▸", view_rules: "Defences", rules_enforce: "ENFORCE — blocks", rules_none: "No defences generated.", copy: "copy", copied: "copied", enf_title: "Live block", enf_inactive: "Not armed", enf_active: "ARMED — blocking", enf_arm: "Block this attack", enf_disarm: "Lift the block", enf_none: "No attack-artifact binaries to block here.", enf_safety: "Only the attack's own planted binaries are killed — never system shells.",
+    nav_targets: "Targets ▸", nav_report: "Report ▸", view_rules: "Defences", rules_enforce: "ENFORCE — blocks", rules_none: "No defences generated.", copy: "copy", copied: "copied", enf_title: "Live block", enf_inactive: "Not armed", enf_active: "ARMED — blocking", enf_arm: "Block this attack", enf_disarm: "Lift the block", enf_none: "No attack-artifact binaries to block here.", enf_safety: "Only the attack's own planted binaries are killed — never system shells.", enf_blocked: "Attack blocked",
     graph_empty_hint: "Nothing correlated to show in Focus. Start the capture engine before attacking (for process telemetry), or turn off Focus to see all requests.",
     view_infra: "Infrastructure", live: "LIVE", imp_rce: "code execution", imp_root: "root achieved", imp_secrets: "{n} secret(s) read", imp_egress: "{n} egress attempt(s)", imp_clean: "no impact detected yet", a_normal: "normal", a_touched: "touched", a_compromised: "compromised",
   },
@@ -460,7 +463,7 @@ const I18N = {
     f_status: "Статус", f_srcip: "IP источника", f_dest: "Назначение", f_proto: "Протокол", f_frompid: "Из PID",
     view_graph: "Граф", view_timeline: "Таймлайн", integrity: "Целостность доказательств",
     integrity_verified: "подтверждена", integrity_broken: "НАРУШЕНА", integrity_head: "голова",
-    nav_targets: "Цели ▸", nav_report: "Отчёт ▸", view_rules: "Защита", rules_enforce: "ENFORCE — блокирует", rules_none: "Правила не сгенерированы.", copy: "копировать", copied: "скопировано", enf_title: "Живой блок", enf_inactive: "Не активна", enf_active: "АКТИВНА — блокирует", enf_arm: "Заблокировать атаку", enf_disarm: "Снять защиту", enf_none: "В этом инциденте нет безопасных артефактов для блокировки.", enf_safety: "Убиваются только подброшенные бинари атаки — системные шеллы не трогаются.",
+    nav_targets: "Цели ▸", nav_report: "Отчёт ▸", view_rules: "Защита", rules_enforce: "ENFORCE — блокирует", rules_none: "Правила не сгенерированы.", copy: "копировать", copied: "скопировано", enf_title: "Живой блок", enf_inactive: "Не активна", enf_active: "АКТИВНА — блокирует", enf_arm: "Заблокировать атаку", enf_disarm: "Снять защиту", enf_none: "В этом инциденте нет безопасных артефактов для блокировки.", enf_safety: "Убиваются только подброшенные бинари атаки — системные шеллы не трогаются.", enf_blocked: "Атака заблокирована",
     graph_empty_hint: "В «Фокусе» нет связанной активности. Запустите движок захвата до атаки (для телеметрии процессов) или снимите «Фокус», чтобы увидеть все запросы.",
     view_infra: "Инфраструктура", live: "LIVE", imp_rce: "выполнение кода", imp_root: "получен root", imp_secrets: "прочитано секретов: {n}", imp_egress: "исходящих попыток: {n}", imp_clean: "ущерба пока не обнаружено", a_normal: "норма", a_touched: "затронут", a_compromised: "скомпрометирован",
   },
@@ -486,7 +489,7 @@ const I18N = {
     f_status: "Мәртебе", f_srcip: "Бастау IP", f_dest: "Межелі", f_proto: "Хаттама", f_frompid: "PID-тен",
     view_graph: "Граф", view_timeline: "Уақыт сызбасы", integrity: "Дәлелдер тұтастығы",
     integrity_verified: "расталған", integrity_broken: "БҰЗЫЛҒАН", integrity_head: "бас",
-    nav_targets: "Нысандар ▸", nav_report: "Есеп ▸", view_rules: "Қорғаныс", rules_enforce: "ENFORCE — бөгейді", rules_none: "Ережелер жасалмады.", copy: "көшіру", copied: "көшірілді", enf_title: "Тірі бұғаттау", enf_inactive: "Белсенді емес", enf_active: "БЕЛСЕНДІ — бұғаттайды", enf_arm: "Шабуылды бұғаттау", enf_disarm: "Қорғанысты алу", enf_none: "Бұл оқиғада бұғаттауға қауіпсіз артефакт жоқ.", enf_safety: "Тек шабуылдың артефакт бинарлары өлтіріледі — жүйелік шеллдер емес.",
+    nav_targets: "Нысандар ▸", nav_report: "Есеп ▸", view_rules: "Қорғаныс", rules_enforce: "ENFORCE — бөгейді", rules_none: "Ережелер жасалмады.", copy: "көшіру", copied: "көшірілді", enf_title: "Тірі бұғаттау", enf_inactive: "Белсенді емес", enf_active: "БЕЛСЕНДІ — бұғаттайды", enf_arm: "Шабуылды бұғаттау", enf_disarm: "Қорғанысты алу", enf_none: "Бұл оқиғада бұғаттауға қауіпсіз артефакт жоқ.", enf_safety: "Тек шабуылдың артефакт бинарлары өлтіріледі — жүйелік шеллдер емес.", enf_blocked: "Шабуыл бұғатталды",
     graph_empty_hint: "«Фокуста» байланысқан әрекет жоқ. Шабуылдан бұрын түсіру қозғалтқышын қосыңыз (процесс телеметриясы үшін) немесе барлық сұрауларды көру үшін «Фокусты» алыңыз.",
     view_infra: "Инфрақұрылым", live: "LIVE", imp_rce: "код орындау", imp_root: "root алынды", imp_secrets: "{n} құпия оқылды", imp_egress: "{n} шығыс әрекет", imp_clean: "әзірге зиян жоқ", a_normal: "қалыпты", a_touched: "тиіскен", a_compromised: "бұзылған",
   },
@@ -504,7 +507,7 @@ const L = (dict) => (dict && (dict[lang] || dict.en)) || '';
 const hiddenEdges = new Set();
 let cy = null, graph = null, recon = null, nodeById = {}, activeStage = null, activeNode = null;
 let timeline = null, integrityData = null, view = 'infra';
-let cyInfra = null, infra = null, impactData = null, liveTimer = null, prevStatus = {}, rulesData = null, enforceData = null;
+let cyInfra = null, infra = null, impactData = null, liveTimer = null, prevStatus = {}, rulesData = null, enforceData = null, graphStale = false;
 
 /* ---------- utils ---------- */
 function escapeHtml(s) {
@@ -732,11 +735,13 @@ function enforcePanelHtml() {
   const e = enforceData;
   if (!e) return '';
   const armed = !!e.armed;
+  const blocks = e.blocks || 0;
   const bins = (e.blockable || []).map(escapeHtml).join(', ');
   const canArm = (e.blockable || []).length > 0 && e.sensor;
   return `<div class="enforce-panel ${armed ? 'armed' : ''}">
     <span class="et">${escapeHtml(t('enf_title'))}</span>
     <span class="st ${armed ? 'on' : 'off'}">${escapeHtml(armed ? t('enf_active') : t('enf_inactive'))}</span>
+    ${blocks > 0 ? `<span class="blocked">⛔ ${escapeHtml(t('enf_blocked'))} · ${blocks}</span>` : ''}
     ${bins ? `<span class="bins">${bins}</span>` : `<span class="bins">${escapeHtml(t('enf_none'))}</span>`}
     <span class="spacer"></span>
     ${armed
@@ -808,6 +813,7 @@ function setView(v) {
   document.querySelectorAll('#viewswitch button').forEach((b) => b.classList.toggle('on', b.dataset.view === v));
   updateGraphEmpty();
   renderImpact();
+  if (v === 'graph' && graphStale) { graphStale = false; renderGraph(); }
   if (v === 'graph' && cy) { cy.resize(); cy.fit(undefined, 40); if (activeStage) highlightStage(activeStage); }
   if (v === 'infra' && cyInfra) { cyInfra.resize(); cyInfra.fit(undefined, 50); }
   if (v === 'timeline' && activeStage) markTimelineStage(activeStage);
@@ -1009,19 +1015,40 @@ function rerenderDynamic() {
 /* ---------- live auto-refresh (watch the attack unfold) ---------- */
 async function pollLive() {
   const sid = $('#scenario').value; if (!sid) return;
-  const [inf, imp, r] = await Promise.all([
+  const [inf, imp, r, enf, tl, g, integ] = await Promise.all([
     fetch(`/incidents/${encodeURIComponent(sid)}/infrastructure`).then(x => x.ok ? x.json() : null),
     fetch(`/incidents/${encodeURIComponent(sid)}/impact`).then(x => x.ok ? x.json() : null),
     fetch(`/incidents/${encodeURIComponent(sid)}/reconstruction`).then(x => x.ok ? x.json() : null),
+    fetch(`/incidents/${encodeURIComponent(sid)}/enforce`).then(x => x.ok ? x.json() : null),
+    fetch(`/incidents/${encodeURIComponent(sid)}/timeline`).then(x => x.ok ? x.json() : null),
+    fetch(`/incidents/${encodeURIComponent(sid)}/graph`).then(x => x.ok ? x.json() : null),
+    fetch('/integrity').then(x => x.ok ? x.json() : null),
   ]);
+  if (sid !== $('#scenario').value) return;   // case changed mid-poll
+  // cheap, non-interactive re-renders every tick
   if (inf) { infra = inf; renderInfra(); }
   if (imp) { impactData = imp; renderImpact(); }
   if (r) { recon = r; renderVerdict(); renderStory(); }
+  if (enf) { enforceData = enf; renderRules(); }
+  if (integ) { integrityData = integ; renderIntegrity(); }
+  // timeline: only rebuild when new events arrived (keeps clicks/scroll stable)
+  if (tl) {
+    const changed = !timeline || tl.entries.length !== timeline.entries.length;
+    timeline = tl;
+    if (changed) renderTimeline();
+  }
+  // graph: rebuild only on change, and only while its view is visible
+  if (g) {
+    const changed = !graph || g.nodes.length !== graph.nodes.length
+      || g.edges.length !== graph.edges.length;
+    graph = g; nodeById = {}; g.nodes.forEach((n) => nodeById[n.id] = n);
+    if (changed) { if (view === 'graph') renderGraph(); else graphStale = true; }
+  }
 }
 function setLive(on) {
   $('#live').checked = on;
   if (liveTimer) { clearInterval(liveTimer); liveTimer = null; }
-  if (on) liveTimer = setInterval(pollLive, 1500);
+  if (on) { pollLive(); liveTimer = setInterval(pollLive, 1500); }
 }
 
 /* ---------- collapse columns ---------- */
@@ -1085,7 +1112,7 @@ $('#reopenRight').addEventListener('click', () => setCollapsed('right', false));
   await loadCase();
   const wantView = qs.get('view');
   setView(['graph', 'timeline', 'infra', 'rules'].includes(wantView) ? wantView : 'infra');
-  if (qs.get('live') === '1') setLive(true);
+  setLive(qs.get('live') !== '0');   // live by default; ?live=0 to pause
 })();
 </script>
 </body>

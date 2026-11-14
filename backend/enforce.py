@@ -18,6 +18,7 @@ evidence, so the policy targets exactly what the attacker used.
 
 from __future__ import annotations
 
+import json
 import os
 import tempfile
 from typing import Any, Iterable
@@ -152,11 +153,37 @@ def remove_enforcement(scenario_id: str) -> dict:
     return {"armed": False, "policy": name}
 
 
+def _policy_block_count(policy: dict) -> int:
+    """How many times this enforce policy fired a Sigkill (Tetragon stats)."""
+    counters = (policy.get("stats") or {}).get("action_counters") or {}
+    try:
+        return int(counters.get("signal", 0))
+    except (TypeError, ValueError):
+        return 0
+
+
 def enforcement_status(scenario_id: str) -> dict:
+    """Armed state and live block count for this incident's kill-policy.
+
+    ``blocks`` is the number of exec attempts the kernel has killed since the
+    policy was armed — the console shows it as proof the attack was stopped.
+    """
     name = _policy_name(scenario_id)
     if not sensor_running():
-        return {"armed": False, "policy": name, "sensor": False}
+        return {"armed": False, "policy": name, "sensor": False, "blocks": 0}
     r = _docker([DOCKER, "exec", SENSOR_CONTAINER, "tetra",
-                 "tracingpolicy", "list"], timeout=15)
-    armed = r.returncode == 0 and name in r.stdout
-    return {"armed": armed, "policy": name, "sensor": True}
+                 "tracingpolicy", "list", "-o", "json"], timeout=15)
+    if r.returncode != 0:
+        return {"armed": False, "policy": name, "sensor": True, "blocks": 0}
+    try:
+        policies = (json.loads(r.stdout) or {}).get("policies", [])
+    except ValueError:
+        # fall back to a plain name match if JSON is unavailable
+        return {"armed": name in r.stdout, "policy": name,
+                "sensor": True, "blocks": 0}
+    for p in policies:
+        if p.get("name") == name:
+            armed = p.get("enabled", False) or p.get("state") == "TP_STATE_ENABLED"
+            return {"armed": bool(armed), "policy": name, "sensor": True,
+                    "blocks": _policy_block_count(p)}
+    return {"armed": False, "policy": name, "sensor": True, "blocks": 0}

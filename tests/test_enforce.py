@@ -4,7 +4,21 @@ import yaml
 
 from backend.enforce import (
     safe_to_block, enforce_targets, build_policy, _policy_name,
+    _policy_block_count,
 )
+
+
+class TestBlockCount(unittest.TestCase):
+
+    def test_counts_sigkills_from_stats(self):
+        pol = {"stats": {"action_counters": {"post": "2", "signal": "2"}}}
+        self.assertEqual(_policy_block_count(pol), 2)
+
+    def test_zero_when_no_stats(self):
+        self.assertEqual(_policy_block_count({}), 0)
+        self.assertEqual(_policy_block_count({"stats": {}}), 0)
+        self.assertEqual(
+            _policy_block_count({"stats": {"action_counters": {"post": "5"}}}), 0)
 
 
 class TestSafety(unittest.TestCase):
