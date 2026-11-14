@@ -11,6 +11,8 @@ BLACKBOX — экспериментальная платформа для рас
 > ⚠️ Это изолированная лаборатория с уязвимыми целями. Запускай только в доверенной сети.
 > Нужны: **Docker** (запущенный демон) и ядро Linux с **BTF** (`/sys/kernel/btf/vmlinux`) для eBPF-сенсора Tetragon. Python ≥ 3.11.
 
+Движок работает на Docker + Python и **не зависит от дистрибутива** — путь `install.sh` подходит для любого Linux (Arch, Debian, Ubuntu, Kali, Fedora…).
+
 ### Любой Linux — `install.sh`
 
 ```bash
@@ -21,15 +23,34 @@ blackbox doctor       # проверка Docker / ядра / Python
 blackbox up           # консоль:  http://127.0.0.1:8000/ui/
 ```
 
+**Debian / Ubuntu / Kali** — `venv`, `pip` и Docker ставятся отдельно, поэтому один раз перед `install.sh`:
+
+```bash
+sudo apt update
+sudo apt install -y python3-venv python3-pip docker.io
+sudo systemctl enable --now docker
+sudo usermod -aG docker "$USER"    # затем перелогиниться
+```
+
+**Fedora / RHEL**:
+
+```bash
+sudo dnf install -y python3 docker
+sudo systemctl enable --now docker
+sudo usermod -aG docker "$USER"    # затем перелогиниться
+```
+
+На Arch `python` уже включает `venv`/`pip`, а Docker — пакет `docker`.
+
 ### Arch Linux — PKGBUILD (pacman-style)
 
 ```bash
-# через AUR-хелпер, если опубликуешь как blackbox-git:
-yay -S blackbox-git
-
-# или вручную из репозитория:
+# нативно через pacman, аккаунт AUR не нужен:
 makepkg -si
 blackbox up
+
+# либо, когда пакет опубликован в AUR:
+yay -S blackbox-git
 ```
 
 ### Команды
