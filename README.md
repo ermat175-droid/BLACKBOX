@@ -2,34 +2,41 @@
 
 **Cyber Investigation & Attack Reconstruction Platform**
 
-BLACKBOX — экспериментальная платформа для расследования киберинцидентов, анализа событий и реконструкции последовательности действий внутри изолированной лабораторной среды.
+BLACKBOX is an experimental platform for investigating cyber incidents, analysing
+events and reconstructing the sequence of actions inside an isolated lab
+environment.
 
-Проект направлен на изучение принципов Detection Engineering, Digital Forensics, Incident Response и Threat Hunting.
+The project explores the principles of Detection Engineering, Digital Forensics,
+Incident Response and Threat Hunting.
 
-## Установка
+## Installation
 
-> ⚠️ Это изолированная лаборатория с уязвимыми целями. Запускай только в доверенной сети.
-> Нужны: **Docker** (запущенный демон) и ядро Linux с **BTF** (`/sys/kernel/btf/vmlinux`) для eBPF-сенсора Tetragon. Python ≥ 3.11.
+> ⚠️ This is an isolated lab with **vulnerable** targets. Run it only on a trusted
+> network, never on a work machine.
+> Requirements: **Docker** (running daemon) and a Linux kernel with **BTF**
+> (`/sys/kernel/btf/vmlinux`) for the Tetragon eBPF sensor. Python ≥ 3.11.
 
-Движок работает на Docker + Python и **не зависит от дистрибутива** — путь `install.sh` подходит для любого Linux (Arch, Debian, Ubuntu, Kali, Fedora…).
+The engine runs on Docker + Python and is **distribution-agnostic** — the
+`install.sh` path works on any Linux (Arch, Debian, Ubuntu, Kali, Fedora…).
 
-### Любой Linux — `install.sh`
+### Any Linux — `install.sh`
 
 ```bash
 git clone https://github.com/ermat175-droid/BLACKBOX
 cd BLACKBOX
-./install.sh          # venv + зависимости + команда `blackbox`
-blackbox doctor       # проверка Docker / ядра / Python
-blackbox up           # консоль:  http://127.0.0.1:8000/ui/
+./install.sh          # venv + dependencies + the `blackbox` command
+blackbox doctor       # checks Docker / kernel / Python
+blackbox up           # console:  http://127.0.0.1:8000/ui/
 ```
 
-**Debian / Ubuntu / Kali** — `venv`, `pip` и Docker ставятся отдельно, поэтому один раз перед `install.sh`:
+**Debian / Ubuntu / Kali** — `venv`, `pip` and Docker are separate packages, so
+install them once before `install.sh`:
 
 ```bash
 sudo apt update
 sudo apt install -y python3-venv python3-pip docker.io
 sudo systemctl enable --now docker
-sudo usermod -aG docker "$USER"    # затем перелогиниться
+sudo usermod -aG docker "$USER"    # then log out and back in
 ```
 
 **Fedora / RHEL**:
@@ -37,158 +44,158 @@ sudo usermod -aG docker "$USER"    # затем перелогиниться
 ```bash
 sudo dnf install -y python3 docker
 sudo systemctl enable --now docker
-sudo usermod -aG docker "$USER"    # затем перелогиниться
+sudo usermod -aG docker "$USER"    # then log out and back in
 ```
 
-На Arch `python` уже включает `venv`/`pip`, а Docker — пакет `docker`.
+On Arch, `python` already bundles `venv`/`pip`, and Docker is the `docker` package.
 
 ### Arch Linux — PKGBUILD (pacman-style)
 
 ```bash
-# нативно через pacman, аккаунт AUR не нужен:
+# natively via pacman, no AUR account needed:
 makepkg -si
 blackbox up
 
-# либо, когда пакет опубликован в AUR:
+# or, once the package is published to the AUR:
 yay -S blackbox-git
 ```
 
-### Команды
+### Commands
 
 ```text
-blackbox up [--lan]   запустить консоль (--lan — открыть всем в твоём Wi-Fi)
-blackbox down         остановить
-blackbox status       состояние консоли / сенсора / целей
-blackbox open         открыть в браузере
-blackbox doctor       проверить предпосылки
-blackbox clean        стереть локальные данные расследований и лаб-контейнеры
+blackbox up [--lan]   start the console (--lan exposes it to your Wi-Fi)
+blackbox down         stop the console
+blackbox status       console / sensor / targets state
+blackbox open         open the console in a browser
+blackbox doctor       check prerequisites
+blackbox clean        wipe local case data and lab containers
 ```
 
-Данные расследований (`blackbox.db`, цели, прокси) хранятся локально и **не попадают в git** — каждый, кто склонирует репозиторий, стартует с чистой базой.
+Investigation data (`blackbox.db`, targets, proxy) is stored locally and **never
+committed to git** — anyone who clones the repository starts with a clean
+database.
 
+## Features
 
-## Основные возможности
+- Synthetic incident scenario generation.
+- Event collection and normalization.
+- Suspicious-activity detection via detection rules.
+- Event correlation by PID, parent PID, timestamps and network attributes.
+- Mapping of detected actions to MITRE ATT&CK.
+- Incident timeline construction.
+- Reconstruction of the action sequence.
+- Relationship graph between events and processes.
+- AI Investigator to assist analysis.
+- Web interface for incident analysis.
 
-Планируемые возможности платформы:
-
-- Генерация синтетических сценариев инцидентов.
-- Сбор и нормализация событий.
-- Обнаружение подозрительной активности с помощью правил обнаружения.
-- Корреляция событий по PID, Parent PID, временным меткам и сетевым атрибутам.
-- Сопоставление обнаруженных действий с MITRE ATT&CK.
-- Построение временной шкалы инцидента.
-- Реконструкция последовательности действий.
-- Граф связей между событиями и процессами.
-- AI Investigator для помощи в расследовании.
-- Веб-интерфейс для анализа инцидентов.
-
-## Архитектура
+## Architecture
 
 ```text
 BLACKBOX
 │
 ├── Scenario Simulator
-│   └── Генерация синтетических инцидентов
+│   └── Generate synthetic incidents
 │
 ├── Event Collector
-│   └── Получение событий
+│   └── Receive events
 │
 ├── Event Normalization
-│   └── Приведение событий к единому формату
+│   └── Canonicalize events to one format
 │
 ├── Detection Engine
-│   └── Обнаружение подозрительной активности
+│   └── Detect suspicious activity
 │
 ├── Correlation Engine
-│   └── Связывание событий
+│   └── Link events together
 │
 ├── MITRE ATT&CK Mapping
-│   └── Классификация техник
+│   └── Classify techniques
 │
 ├── Timeline Builder
-│   └── Восстановление последовательности событий
+│   └── Reconstruct the sequence of events
 │
 ├── Evidence Graph
-│   └── Визуализация связей
+│   └── Visualize relationships
 │
 ├── AI Investigator
-│   └── Помощь в анализе инцидентов
+│   └── Assist with investigation
 │
 └── Web Dashboard
-    └── Интерфейс расследования
+    └── Investigation interface
 ```
 
-## Текущий статус
+## Current status
 
-### Реализовано
+### Implemented
 
-- [x] Базовая структура проекта.
-- [x] Backend на Python и FastAPI.
-- [x] SQLite для хранения событий.
+- [x] Base project structure.
+- [x] Python + FastAPI backend.
+- [x] SQLite event storage.
 - [x] SQLAlchemy ORM.
-- [x] API для добавления и получения событий.
-- [x] Синтетический сценарий BB-001.
-- [x] Scenario Simulator для отправки тестовых событий в API.
-- [x] Базовая Git-структура и `.gitignore`.
-- [x] Event Normalization (канонический формат + raw + индексы).
-- [x] Нормализация встроена в API ingestion (`POST /events`).
-- [x] Collector: процессы и сеть через Tetragon (eBPF, без правки машин).
-- [x] Collector: HTTP-запросы из логов Apache.
-- [x] Correlation Engine: граф инцидента (`parent_of`, `spawned_by`,
-      `connected_to`), у каждой связи есть обоснование.
-- [x] Reconstruction Engine: история атаки по этапам (тактика + техника
-      MITRE + обоснование + уверенность + ссылки на события),
-      `GET /incidents/{case}/reconstruction`.
-- [x] Detection + MITRE ATT&CK Mapping (детекторы в Reconstruction Engine).
-- [x] Investigation Console (`GET /ui`): история атаки + граф + таймлайн +
-      панель доказательств; языки RU/EN/KZ; сворачиваемые боковые колонки.
-- [x] Timeline инцидента (`GET /incidents/{case}/timeline`).
-- [x] Целостность доказательств: tamper-evident хеш-цепочка
-      (`GET /integrity`), бейдж в UI.
-- [x] Target Manager: загрузка сайтов-целей (образ / Dockerfile),
-      запуск в песочнице на 127.0.0.1, авто-телеметрия; GUI
-      `/ui/targets.html` (`/targets`, `/sensor`).
-- [x] Инфраструктура защитника: авто-карта активов + blast-radius
-      (`/incidents/{id}/infrastructure`, `/impact`); live-карта в UI.
-- [x] Слепая валидация vs лог атакующего (`/validate`, `attacker_log.py`).
-- [x] Генерация правил защиты (Sigma + Tetragon) из цепочки (`/rules`).
-- [x] Живой блок атаки (Tetragon enforce, `POST/DELETE /enforce`) с жёстким
-      фильтром безопасности (только артефакты атаки, не системные шеллы).
-- [x] Подписанный самопроверяемый отчёт (`/report`, `verify_report.py`).
-- [x] Офлайн-демо: фикстура инцидента + `scripts/replay.py`.
-- [x] Лаборатория: уязвимые CTF-машины (Iceberg Zone 1), захват телеметрии
-      проверен сквозным прогоном реальной атаки machine1.
+- [x] API to ingest and query events.
+- [x] Synthetic scenario BB-001.
+- [x] Scenario Simulator that sends test events to the API.
+- [x] Base git structure and `.gitignore`.
+- [x] Event normalization (canonical format + raw + indexes).
+- [x] Normalization built into API ingestion (`POST /events`).
+- [x] Collector: processes and network via Tetragon (eBPF, no changes to the target).
+- [x] Collector: HTTP requests via a logging proxy, so **any** loaded site is observable.
+- [x] Correlation Engine: incident graph (`parent_of`, `spawned_by`,
+      `connected_to`), every edge carries a reason.
+- [x] Reconstruction Engine: staged attack story (tactic + MITRE technique +
+      reason + confidence + event references), `GET /incidents/{case}/reconstruction`.
+- [x] Detection + MITRE ATT&CK mapping (detectors in the Reconstruction Engine).
+- [x] Investigation Console (`GET /ui`): attack story + graph + timeline +
+      evidence panel; RU/EN/KZ languages; collapsible side columns; live updates.
+- [x] Incident timeline (`GET /incidents/{case}/timeline`).
+- [x] Evidence integrity: tamper-evident hash chain (`GET /integrity`), UI badge.
+- [x] Target Manager: load target sites (image / Dockerfile), run them sandboxed
+      on 127.0.0.1 with automatic telemetry; GUI `/ui/targets.html`
+      (`/targets`, `/sensor`).
+- [x] Defender infrastructure: auto asset map + blast radius
+      (`/incidents/{id}/infrastructure`, `/impact`); live map in the UI.
+- [x] Blind validation against the attacker's log (`/validate`, `attacker_log.py`).
+- [x] Defence rule generation (Sigma + Tetragon) from the chain (`/rules`).
+- [x] Live attack block (Tetragon enforce, `POST/DELETE /enforce`) with a strict
+      safety filter (attack artefacts only, never system shells); visible block counter.
+- [x] Signed, self-verifying report (`/report`, `verify_report.py`).
+- [x] Offline demo: incident fixture + `scripts/replay.py`.
+- [x] Lab: vulnerable CTF machines, telemetry capture verified end-to-end
+      against a real attack run.
 
-### В разработке
+### In progress
 
-- [ ] Презентация и запасная запись демо для финала ORTAQ.
-- [ ] Compose как источник цели (многоконтейнерные сайты).
-- [ ] AI Investigator (локальная LLM объясняет цепочки со ссылками).
+- [ ] Presentation and a backup demo recording for the ORTAQ final.
+- [ ] Compose as a target source (multi-container sites).
+- [ ] AI Investigator (local LLM explains chains with event citations).
 
-## Технологии
+## Tech stack
 
-| Компонент | Технология |
+| Component | Technology |
 |---|---|
 | Backend | Python, FastAPI |
 | Database | SQLite, SQLAlchemy |
 | Event format | JSON |
 | Detection | Sigma-like rules |
-| AI | Ollama, локальные LLM |
-| Frontend | React, TypeScript |
+| Sensor | Tetragon (eBPF) |
+| AI | Ollama, local LLMs (planned) |
+| Frontend | HTML/CSS/JS (no build step) |
 | Visualization | Cytoscape.js |
 | Environment | Linux, isolated lab |
 
-## Безопасность
+## Security
 
-BLACKBOX разрабатывается как исследовательская лаборатория.
+BLACKBOX is built as a research lab.
 
-- Синтетические сценарии не выполняют реальные команды.
-- Тестовые IP-адреса используются только как данные.
-- Эксперименты с реальными системами проводятся только в собственных изолированных лабораториях.
-- Локальные базы данных, секреты и конфигурации окружения не должны попадать в Git.
+- Synthetic scenarios do not run real commands.
+- Test IP addresses are used only as data.
+- Experiments against real systems are only performed in your own isolated labs.
+- Local databases, secrets and environment configuration must never be committed to git.
 
-## Цель проекта
+## Project goal
 
-Создать платформу, которая сможет принимать события безопасности, выявлять подозрительные цепочки действий и реконструировать ход инцидента, предоставляя аналитику понятную картину произошедшего.
+Build a platform that can ingest security events, surface suspicious chains of
+actions and reconstruct the course of an incident, giving the analyst a clear
+picture of what happened.
 
 **BLACKBOX — from raw events to incident reconstruction.**
