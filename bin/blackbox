@@ -1,0 +1,128 @@
+#!/usr/bin/env bash
+# BLACKBOX control CLI — bring the investigation console up/down and keep it tidy.
+set -euo pipefail
+
+SELF="$(readlink -f "${BASH_SOURCE[0]}")"
+BB_DIR="$(cd "$(dirname "$SELF")/.." && pwd)"
+VENV="$BB_DIR/.venv"
+PY="$VENV/bin/python"
+PORT="${BLACKBOX_PORT:-8000}"
+PIDFILE="$BB_DIR/.blackbox.pid"
+LOG="$BB_DIR/.blackbox.log"
+
+c_grn=$'\033[32m'; c_red=$'\033[31m'; c_dim=$'\033[2m'; c_off=$'\033[0m'
+say()  { printf '%s\n' "$*"; }
+ok()   { printf '%s✓%s %s\n' "$c_grn" "$c_off" "$*"; }
+bad()  { printf '%s✗%s %s\n' "$c_red" "$c_off" "$*"; }
+die()  { printf '%sblackbox: %s%s\n' "$c_red" "$*" "$c_off" >&2; exit 1; }
+
+need_venv() { [ -x "$PY" ] || die "not installed — run ./install.sh in the repo first"; }
+api_pid()   { ss -ltnp 2>/dev/null | grep -F ":$PORT " | grep -oP 'pid=\K[0-9]+' | head -1; }
+lan_ip()    { hostname -I 2>/dev/null | awk '{print $1}'; }
+data_dir()  {
+  if [ -n "${BLACKBOX_DATA:-}" ]; then printf '%s' "$BLACKBOX_DATA"
+  elif [ -w "$BB_DIR" ]; then printf '%s' "$BB_DIR"
+  else printf '%s' "${XDG_DATA_HOME:-$HOME/.local/share}/blackbox"; fi
+}
+
+cmd_up() {
+  need_venv
+  local host="127.0.0.1" lan=0
+  [ "${1:-}" = "--lan" ] && { host="0.0.0.0"; lan=1; }
+  # Case data lives in a writable dir: the repo in dev, ~/.local/share when
+  # installed system-wide (/usr/share/blackbox is read-only).
+  local data; data="$(data_dir)"
+  mkdir -p "$data"
+  if [ -n "$(api_pid)" ]; then
+    ok "already running on :$PORT"
+  else
+    cd "$BB_DIR"
+    PYTHONPATH="$BB_DIR" BLACKBOX_HOST="$host" \
+      BLACKBOX_DATABASE_URL="sqlite:///$data/blackbox.db" \
+      BLACKBOX_TARGETS="$data/targets.json" \
+      BLACKBOX_PROXY_DIR="$data/.proxy" \
+      nohup "$PY" -m uvicorn backend.main:app \
+      --host "$host" --port "$PORT" >"$LOG" 2>&1 &
+    echo $! >"$PIDFILE"
+    sleep 2
+    [ -n "$(api_pid)" ] || { bad "API failed to start — see $LOG"; tail -n 15 "$LOG"; exit 1; }
+    ok "console started on :$PORT"
+  fi
+  say "  local:  ${c_dim}http://127.0.0.1:${PORT}/ui/${c_off}"
+  if [ "$lan" = 1 ]; then
+    say "  wi-fi:  ${c_dim}http://$(lan_ip):${PORT}/ui/${c_off}  (share this with friends on the same network)"
+  else
+    say "  ${c_dim}tip: 'blackbox up --lan' to let others on your Wi-Fi watch live${c_off}"
+  fi
+}
+
+cmd_down() {
+  local pid; pid="$(api_pid)"
+  if [ -n "$pid" ]; then kill "$pid" 2>/dev/null || true; ok "console stopped"; else say "console not running"; fi
+  rm -f "$PIDFILE"
+}
+
+cmd_status() {
+  if [ -n "$(api_pid)" ]; then ok "console: running on :$PORT"; else bad "console: stopped"; fi
+  if docker inspect -f '{{.State.Status}}' bb-tetragon >/dev/null 2>&1; then
+    ok "sensor:  $(docker inspect -f '{{.State.Status}}' bb-tetragon) (bb-tetragon)"
+  else
+    say "sensor:  not started (start it from the UI or it starts with a target)"
+  fi
+  local tgts; tgts="$(docker ps --format '{{.Names}}' 2>/dev/null | grep -E '^bb-tgt-' || true)"
+  [ -n "$tgts" ] && { say "targets:"; printf '  %s\n' $tgts; } || say "targets: none running"
+}
+
+cmd_open() {
+  local url="http://127.0.0.1:${PORT}/ui/"
+  command -v xdg-open >/dev/null 2>&1 && xdg-open "$url" >/dev/null 2>&1 || say "open: $url"
+}
+
+cmd_doctor() {
+  local fail=0
+  if command -v docker >/dev/null 2>&1; then ok "docker installed"; else bad "docker not found"; fail=1; fi
+  if docker info >/dev/null 2>&1; then ok "docker daemon reachable"; else bad "docker daemon not reachable (start it / add your user to the docker group)"; fail=1; fi
+  if [ -r /sys/kernel/btf/vmlinux ]; then ok "kernel BTF present (Tetragon eBPF will load)"; else bad "no /sys/kernel/btf/vmlinux — Tetragon needs a BTF-enabled kernel"; fail=1; fi
+  if [ -x "$PY" ]; then ok "python venv ready ($("$PY" -V 2>&1))"; else bad "python venv missing — run ./install.sh"; fail=1; fi
+  [ "$fail" = 0 ] && ok "all good — 'blackbox up' and go" || die "fix the items above, then re-run 'blackbox doctor'"
+}
+
+cmd_clean() {
+  say "This removes ALL local case data and lab containers (a fresh start)."
+  printf 'Proceed? [y/N] '; read -r a; [ "${a,,}" = "y" ] || { say "cancelled"; return; }
+  cmd_down
+  docker ps -aq --filter 'name=^bb-tgt-' --filter 'name=^bb-prx-' 2>/dev/null | xargs -r docker rm -f >/dev/null 2>&1 || true
+  local data; data="$(data_dir)"
+  rm -f "$data/blackbox.db" "$data/targets.json"
+  rm -rf "$data/.proxy"
+  ok "clean — database, targets and lab containers removed (sensor bb-tetragon left running)"
+}
+
+usage() {
+  cat <<EOF
+BLACKBOX — Cyber Investigation & Attack Reconstruction Platform
+
+usage: blackbox <command>
+
+  up [--lan]   start the console (‑‑lan exposes it to your Wi‑Fi for friends)
+  down         stop the console
+  status       show console / sensor / targets state
+  open         open the console in your browser
+  doctor       check prerequisites (docker, kernel BTF, python)
+  clean        wipe local case data + lab containers (fresh start)
+  help         this message
+
+console UI:  http://127.0.0.1:${PORT}/ui/
+EOF
+}
+
+case "${1:-help}" in
+  up)      shift; cmd_up "${1:-}";;
+  down)    cmd_down;;
+  status)  cmd_status;;
+  open)    cmd_open;;
+  doctor)  cmd_doctor;;
+  clean)   cmd_clean;;
+  help|-h|--help) usage;;
+  *) die "unknown command '${1}' (try: blackbox help)";;
+esac

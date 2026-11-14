@@ -5,3 +5,8 @@ blackbox.db
 .env
 targets.json
 .proxy/
+.blackbox.pid
+.blackbox.log
+*.pkg.tar.zst
+src/
+pkg/

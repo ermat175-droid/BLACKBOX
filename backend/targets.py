@@ -54,7 +54,8 @@ LAB_NETWORK_OPEN = LAB_NETWORK + "-open"   # same, but with internet egress
 # app logs requests itself — this is what makes ANY loaded site observable.
 PROXY_PREFIX = "bb-prx-"
 PROXY_IMAGE = os.getenv("BLACKBOX_PROXY_IMAGE", "nginx:latest")
-_PROXY_DIR = Path(__file__).resolve().parent.parent / ".proxy"
+_PROXY_DIR = Path(os.getenv("BLACKBOX_PROXY_DIR",
+                            Path(__file__).resolve().parent.parent / ".proxy"))
 
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 _lock = Lock()

@@ -6,6 +6,46 @@ BLACKBOX — экспериментальная платформа для рас
 
 Проект направлен на изучение принципов Detection Engineering, Digital Forensics, Incident Response и Threat Hunting.
 
+## Установка
+
+> ⚠️ Это изолированная лаборатория с уязвимыми целями. Запускай только в доверенной сети.
+> Нужны: **Docker** (запущенный демон) и ядро Linux с **BTF** (`/sys/kernel/btf/vmlinux`) для eBPF-сенсора Tetragon. Python ≥ 3.11.
+
+### Любой Linux — `install.sh`
+
+```bash
+git clone https://github.com/ermat175-droid/BLACKBOX
+cd BLACKBOX
+./install.sh          # venv + зависимости + команда `blackbox`
+blackbox doctor       # проверка Docker / ядра / Python
+blackbox up           # консоль:  http://127.0.0.1:8000/ui/
+```
+
+### Arch Linux — PKGBUILD (pacman-style)
+
+```bash
+# через AUR-хелпер, если опубликуешь как blackbox-git:
+yay -S blackbox-git
+
+# или вручную из репозитория:
+makepkg -si
+blackbox up
+```
+
+### Команды
+
+```text
+blackbox up [--lan]   запустить консоль (--lan — открыть всем в твоём Wi-Fi)
+blackbox down         остановить
+blackbox status       состояние консоли / сенсора / целей
+blackbox open         открыть в браузере
+blackbox doctor       проверить предпосылки
+blackbox clean        стереть локальные данные расследований и лаб-контейнеры
+```
+
+Данные расследований (`blackbox.db`, цели, прокси) хранятся локально и **не попадают в git** — каждый, кто склонирует репозиторий, стартует с чистой базой.
+
+
 ## Основные возможности
 
 Планируемые возможности платформы:
