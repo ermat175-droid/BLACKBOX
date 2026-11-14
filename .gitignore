@@ -4,3 +4,4 @@ __pycache__/
 blackbox.db
 .env
 targets.json
+.proxy/

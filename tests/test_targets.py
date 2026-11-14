@@ -60,6 +60,20 @@ class TestPureHelpers(unittest.TestCase):
         argv = tg.run_argv("bb-tgt-x", "img:latest", 8100, 80, bind="0.0.0.0")
         self.assertIn("0.0.0.0:8100:80", argv)
 
+    def test_proxy_conf_points_at_target(self):
+        import tempfile
+        from pathlib import Path
+        orig = tg._PROXY_DIR
+        try:
+            tg._PROXY_DIR = Path(tempfile.mkdtemp())
+            path = tg._write_proxy_conf("juice", "bb-tgt-juice", 3000)
+            conf = Path(path).read_text()
+            self.assertIn("proxy_pass http://bb-tgt-juice:3000;", conf)
+            self.assertIn("listen 80;", conf)
+            self.assertIn("$connection_upgrade", conf)  # websocket-safe
+        finally:
+            tg._PROXY_DIR = orig
+
     def test_run_argv_attaches_isolated_network(self):
         argv = tg.run_argv("bb-tgt-x", "img:latest", 8100, 80, network="bb-lab")
         self.assertIn("--network", argv)

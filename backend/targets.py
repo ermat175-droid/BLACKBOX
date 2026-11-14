@@ -48,6 +48,13 @@ DOCKER = os.getenv("BLACKBOX_DOCKER", "docker")
 # work, but the container cannot establish outbound internet connections —
 # so a compromised target cannot exfiltrate, pull tooling or attack others.
 LAB_NETWORK = os.getenv("BLACKBOX_LAB_NET", "bb-lab")
+LAB_NETWORK_OPEN = LAB_NETWORK + "-open"   # same, but with internet egress
+# Capture proxy: a tiny nginx put in front of every target so its HTTP
+# traffic is logged (combined format, to stdout) regardless of whether the
+# app logs requests itself — this is what makes ANY loaded site observable.
+PROXY_PREFIX = "bb-prx-"
+PROXY_IMAGE = os.getenv("BLACKBOX_PROXY_IMAGE", "nginx:latest")
+_PROXY_DIR = Path(__file__).resolve().parent.parent / ".proxy"
 
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 _lock = Lock()
@@ -142,15 +149,49 @@ def run_argv(container: str, image: str, host_port: int, container_port: int,
 
 def ensure_lab_network() -> None:
     """Create the egress-blocked lab bridge if it does not exist (idempotent)."""
-    if _docker([DOCKER, "network", "inspect", LAB_NETWORK], timeout=15).returncode == 0:
-        return
-    r = _docker([
-        DOCKER, "network", "create",
-        "-o", "com.docker.network.bridge.enable_ip_masquerade=false",
-        LAB_NETWORK,
-    ], timeout=30)
+    ensure_network(True)
+
+
+def ensure_network(isolated: bool) -> str:
+    """Ensure a user-defined bridge exists (so target+proxy resolve by name).
+
+    Isolated → egress blocked (masquerade off); otherwise egress allowed.
+    Returns the network name.
+    """
+    net = LAB_NETWORK if isolated else LAB_NETWORK_OPEN
+    if _docker([DOCKER, "network", "inspect", net], timeout=15).returncode == 0:
+        return net
+    args = [DOCKER, "network", "create"]
+    if isolated:
+        args += ["-o", "com.docker.network.bridge.enable_ip_masquerade=false"]
+    args += [net]
+    r = _docker(args, timeout=30)
     if r.returncode != 0:
-        raise TargetError(f"cannot create lab network: {r.stderr.strip()[-300:]}")
+        raise TargetError(f"cannot create network {net}: {r.stderr.strip()[-300:]}")
+    return net
+
+
+def _write_proxy_conf(slug: str, upstream: str, upstream_port: int) -> str:
+    """Write an nginx config that proxies to the target and logs (combined)."""
+    _PROXY_DIR.mkdir(exist_ok=True)
+    conf = (
+        "map $http_upgrade $connection_upgrade { default upgrade; '' close; }\n"
+        "server {\n"
+        "    listen 80;\n"
+        "    location / {\n"
+        f"        proxy_pass http://{upstream}:{upstream_port};\n"
+        "        proxy_http_version 1.1;\n"
+        "        proxy_set_header Host $host;\n"
+        "        proxy_set_header X-Forwarded-For $remote_addr;\n"
+        "        proxy_set_header Upgrade $http_upgrade;\n"
+        "        proxy_set_header Connection $connection_upgrade;\n"
+        "        proxy_buffering off;\n"
+        "    }\n"
+        "}\n"
+    )
+    path = _PROXY_DIR / f"{slug}.conf"
+    path.write_text(conf, encoding="utf-8")
+    return str(path)
 
 
 def build_argv(path: str, tag: str) -> list[str]:
@@ -315,31 +356,46 @@ def start_target(target_id: str) -> dict:
         else:
             image = t["source"]["image"]
 
-        # Isolated targets run on an egress-blocked bridge so a compromised
-        # one cannot reach the internet; the published port still works.
-        network = None
-        if t.get("isolated", True):
-            ensure_lab_network()
-            network = LAB_NETWORK
-
+        isolated = t.get("isolated", True)
+        net = ensure_network(isolated)
         bind = validate_bind(t.get("bind", HOST_BIND))
-        container = t["container"]
-        _docker([DOCKER, "rm", "-f", container], timeout=30)  # idempotent
-        r = _docker(run_argv(container, image, t["host_port"],
-                             t["container_port"], network, bind))
+        container = t["container"]                 # the target (app)
+        proxy = f"{PROXY_PREFIX}{t['id']}"         # the capture proxy (nginx)
+
+        # clean any previous pair (idempotent)
+        _docker([DOCKER, "rm", "-f", container, proxy], timeout=30)
+
+        # 1) the target: on the lab net, NOT publishing a host port — the
+        #    proxy is the only ingress, so every request is logged.
+        r = _docker([DOCKER, "run", "-d", "--pull=never", "--name", container,
+                     "--network", net, image])
         if r.returncode != 0:
             t["status"] = "error"
             _save(registry)
             raise TargetError(f"run failed: {r.stderr.strip()[-400:]}")
-
         cid = _container_id(container)
+
+        # 2) the capture proxy: nginx in front, logging combined to stdout,
+        #    publishing the host port; this makes any app observable.
+        conf = _write_proxy_conf(t["id"], container, t["container_port"])
+        pr = _docker([DOCKER, "run", "-d", "--pull=never", "--name", proxy,
+                      "--network", net,
+                      "-v", f"{conf}:/etc/nginx/conf.d/default.conf:ro",
+                      "-p", f"{bind}:{t['host_port']}:80", PROXY_IMAGE])
+        if pr.returncode != 0:
+            _docker([DOCKER, "rm", "-f", container], timeout=30)
+            t["status"] = "error"
+            _save(registry)
+            raise TargetError(f"proxy failed: {pr.stderr.strip()[-400:]}")
+
         t["status"] = "running"
+        t["proxy"] = proxy
         shown = "127.0.0.1" if bind in ("127.0.0.1", "0.0.0.0") else bind
         t["url"] = f"http://{shown}:{t['host_port']}"
         _save(registry)
 
-    # wire telemetry (outside the registry lock; may start subprocesses)
-    _start_collectors(t, cid)
+    # wire telemetry: HTTP from the proxy's log, processes from the target.
+    _start_collectors(t, cid, proxy)
     return t
 
 
@@ -348,7 +404,8 @@ def stop_target(target_id: str) -> dict:
         registry = _load()
         t = _get(registry, target_id)
     _stop_collectors(target_id)
-    _docker([DOCKER, "rm", "-f", t["container"]], timeout=30)
+    _docker([DOCKER, "rm", "-f", t["container"],
+             f"{PROXY_PREFIX}{target_id}"], timeout=30)
     with _lock:
         registry = _load()
         t = _get(registry, target_id)
@@ -384,14 +441,17 @@ def _spawn(module: str, args: list[str]):
     )
 
 
-def _start_collectors(target: dict, cid: str | None) -> None:
+def _start_collectors(target: dict, cid: str | None,
+                      http_container: str | None = None) -> None:
     _stop_collectors(target["id"])
     procs: dict[str, Any] = {"http": None, "tetra": None}
     scenario = target["scenario_id"]
 
+    # HTTP comes from the capture proxy's combined log (falls back to the
+    # target container for older records without a proxy).
     procs["http"] = _spawn("backend.collector.http_log_collector", [
-        "--container", target["container"], "--scenario", scenario,
-        "--since", "0m", "--api", API_EVENTS,
+        "--container", http_container or target.get("proxy") or target["container"],
+        "--scenario", scenario, "--since", "0m", "--api", API_EVENTS,
     ])
     if cid and sensor_running():
         procs["tetra"] = _spawn("backend.collector.tetragon_collector", [
@@ -461,7 +521,7 @@ def reattach_running_targets() -> list[str]:
     reattached = []
     for t in _load():
         if _container_state(t["container"]) == "running":
-            _start_collectors(t, _container_id(t["container"]))
+            _start_collectors(t, _container_id(t["container"]), t.get("proxy"))
             reattached.append(t["id"])
     return reattached
 
