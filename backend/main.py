@@ -459,7 +459,7 @@ def targets_add(body: dict[str, Any] = Body(...)):
     return _target_or_400(
         targets_mod.add_target, name, source,
         body.get("container_port", 80), body.get("host_port"),
-        body.get("isolated", True),
+        body.get("isolated", True), body.get("bind", "127.0.0.1"),
     )
 
 

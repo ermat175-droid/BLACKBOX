@@ -121,6 +121,11 @@
         <input id="f_cport" type="number" value="80" min="1" max="65535"></label>
       <label class="f"><span data-i18n="f_hport"></span>
         <input id="f_hport" type="number" min="1" max="65535" placeholder="auto"></label>
+      <label class="f"><span data-i18n="f_bind"></span>
+        <select id="f_bind">
+          <option value="127.0.0.1" data-i18n="bind_local"></option>
+          <option value="0.0.0.0" data-i18n="bind_lan"></option>
+        </select></label>
       <label class="f full" style="flex-direction:row; align-items:center; gap:8px; color:var(--text-1);">
         <input type="checkbox" id="f_isolated" checked> <span data-i18n="f_isolated"></span></label>
       <div class="full"><button class="primary" type="submit" data-i18n="add_btn"></button></div>
@@ -138,7 +143,7 @@
 const $ = (s) => document.querySelector(s);
 const I18N = {
   en: { subtitle:"/ target loader", nav_console:"◂ Console",
-    safety:"Targets are deliberately vulnerable. They are always published on 127.0.0.1 only. To attack from another machine, put both on a dedicated isolated network with no internet route — never your normal Wi-Fi.",
+    safety:"Targets are deliberately vulnerable. Default publish is 127.0.0.1 (this machine only). \"Reachable from\" = network exposes the vulnerable target to EVERYONE on that LAN/Wi-Fi — prefer a dedicated isolated link. Internet egress stays blocked either way.",
     engine_title:"Capture engine (process & network telemetry)",
     engine_on:"running", engine_off:"stopped",
     engine_start:"Start engine", engine_stop:"Stop engine",
@@ -152,10 +157,10 @@ const I18N = {
     st_run:"running", st_stop:"stopped", st_err:"error",
     working:"working…", confirm_del:"Delete this target?",
     img_pick:"— choose an image —", img_none:"no local images found",
-    f_isolated:"Isolate from the internet (recommended)", iso_on:"isolated", iso_off:"internet",
+    f_isolated:"Isolate from the internet (recommended)", iso_on:"isolated", iso_off:"internet", f_bind:"Reachable from", bind_local:"This machine only (127.0.0.1)", bind_lan:"The network / Wi-Fi (0.0.0.0)",
   },
   ru: { subtitle:"/ загрузка целей", nav_console:"◂ Консоль",
-    safety:"Цели специально уязвимы. Они всегда публикуются только на 127.0.0.1. Чтобы атаковать с другого ноута — выделенная изолированная сеть без выхода в интернет, никогда не обычный Wi-Fi.",
+    safety:"Цели специально уязвимы. По умолчанию — только 127.0.0.1 (этот ноут). «Доступ откуда» = сеть открывает уязвимую цель ВСЕМ в этом LAN/Wi-Fi — лучше выделенный изолированный линк. Выход в интернет у цели всё равно закрыт.",
     engine_title:"Движок захвата (телеметрия процессов и сети)",
     engine_on:"запущен", engine_off:"остановлен",
     engine_start:"Запустить движок", engine_stop:"Остановить движок",
@@ -169,10 +174,10 @@ const I18N = {
     st_run:"запущена", st_stop:"остановлена", st_err:"ошибка",
     working:"выполняется…", confirm_del:"Удалить эту цель?",
     img_pick:"— выберите образ —", img_none:"локальных образов не найдено",
-    f_isolated:"Изолировать от интернета (рекомендуется)", iso_on:"изолирована", iso_off:"интернет",
+    f_isolated:"Изолировать от интернета (рекомендуется)", iso_on:"изолирована", iso_off:"интернет", f_bind:"Доступ откуда", bind_local:"Только этот ноут (127.0.0.1)", bind_lan:"Сеть / Wi-Fi (0.0.0.0)",
   },
   kz: { subtitle:"/ нысандарды жүктеу", nav_console:"◂ Консоль",
-    safety:"Нысандар әдейі осал. Олар әрқашан тек 127.0.0.1-де жарияланады. Басқа ноутбуктан шабуылдау үшін — интернетсіз оқшауланған жеке желі, ешқашан әдеттегі Wi-Fi емес.",
+    safety:"Нысандар әдейі осал. Әдепкі — тек 127.0.0.1 (осы ноут). «Қайдан қолжетімді» = желі осал нысанды сол LAN/Wi-Fi-дегі БӘРІНЕ ашады — оқшауланған жеке линк артық. Нысанның интернетке шығуы бәрібір жабық.",
     engine_title:"Түсіру қозғалтқышы (процесс пен желі телеметриясы)",
     engine_on:"қосулы", engine_off:"тоқтатылған",
     engine_start:"Қозғалтқышты қосу", engine_stop:"Қозғалтқышты тоқтату",
@@ -186,7 +191,7 @@ const I18N = {
     st_run:"қосулы", st_stop:"тоқтатылған", st_err:"қате",
     working:"орындалуда…", confirm_del:"Бұл нысанды жою керек пе?",
     img_pick:"— образды таңдаңыз —", img_none:"жергілікті образдар табылмады",
-    f_isolated:"Интернеттен оқшаулау (ұсынылады)", iso_on:"оқшауланған", iso_off:"интернет",
+    f_isolated:"Интернеттен оқшаулау (ұсынылады)", iso_on:"оқшауланған", iso_off:"интернет", f_bind:"Қайдан қолжетімді", bind_local:"Тек осы ноут (127.0.0.1)", bind_lan:"Желі / Wi-Fi (0.0.0.0)",
   },
 };
 let lang = localStorage.getItem('bb_lang') || 'ru'; if (!I18N[lang]) lang = 'en';
@@ -245,7 +250,8 @@ function cardHtml(x) {
         ${x.isolated === false
           ? `<span class="badge net">🌐 ${esc(t('iso_off'))}</span>`
           : `<span class="badge iso">🔒 ${esc(t('iso_on'))}</span>`}</div>
-      <div class="meta">${src} · <code>127.0.0.1:${x.host_port}→${x.container_port}</code>${url}
+      <div class="meta">${src} · <code>${esc(x.bind||'127.0.0.1')}:${x.host_port}→${x.container_port}</code>
+        ${x.bind && x.bind!=='127.0.0.1' ? `<span class="badge net">LAN</span>` : ''}${url}
         · case <code>${esc(x.scenario_id)}</code></div>
     </div>
     <div class="actions">
@@ -306,7 +312,7 @@ $('#addForm').addEventListener('submit', async (e)=> {
     : { type:'build', path: $('#f_path').value.trim() };
   const body = { name: $('#f_name').value.trim(), source,
     container_port: Number($('#f_cport').value) || 80,
-    isolated: $('#f_isolated').checked };
+    isolated: $('#f_isolated').checked, bind: $('#f_bind').value };
   const hp = $('#f_hport').value.trim(); if (hp) body.host_port = Number(hp);
   try {
     await api('POST', '/targets', body);

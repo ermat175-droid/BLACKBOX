@@ -110,19 +110,33 @@ def next_host_port(registry: list[dict], base: int = PORT_BASE) -> int:
     return port
 
 
+def validate_bind(bind: Any) -> str:
+    """A publish address: 127.0.0.1 (this host) or an IPv4 / 0.0.0.0 (LAN)."""
+    b = (str(bind) if bind is not None else HOST_BIND).strip() or HOST_BIND
+    if not re.fullmatch(r"\d{1,3}(\.\d{1,3}){3}", b):
+        raise TargetError(f"invalid bind address: {b}")
+    for part in b.split("."):
+        if int(part) > 255:
+            raise TargetError(f"invalid bind address: {b}")
+    return b
+
+
 def run_argv(container: str, image: str, host_port: int, container_port: int,
-             network: str | None = None) -> list[str]:
-    """docker argv to run a target, always bound to localhost.
+             network: str | None = None, bind: str = HOST_BIND) -> list[str]:
+    """docker argv to run a target.
 
     ``--pull=never`` keeps the sandbox from reaching out to a registry: a
     lab target must already be present locally, and a missing one fails fast
     with a clear "image not found locally" instead of an internet pull.
     ``network`` attaches the target to an isolated bridge (no egress).
+    ``bind`` is the publish address — 127.0.0.1 keeps it to this host,
+    0.0.0.0 (or a LAN IP) exposes the deliberately-vulnerable target to the
+    network (only do that on a trusted/isolated link).
     """
     argv = [DOCKER, "run", "-d", "--pull=never", "--name", container]
     if network:
         argv += ["--network", network]
-    argv += ["-p", f"{HOST_BIND}:{host_port}:{container_port}", image]
+    argv += ["-p", f"{bind}:{host_port}:{container_port}", image]
     return argv
 
 
@@ -254,9 +268,11 @@ def list_targets() -> list[dict]:
 
 
 def add_target(name: str, source: Any, container_port: int = 80,
-               host_port: Any = None, isolated: bool = True) -> dict:
+               host_port: Any = None, isolated: bool = True,
+               bind: Any = HOST_BIND) -> dict:
     source = validate_source(source)
     cport = _valid_port(container_port, "container_port")
+    bind_addr = validate_bind(bind)
     with _lock:
         registry = _load()
         slug = slugify(name)
@@ -271,6 +287,7 @@ def add_target(name: str, source: Any, container_port: int = 80,
             "host_port": hport,
             "container_port": cport,
             "isolated": bool(isolated),
+            "bind": bind_addr,
             "scenario_id": f"TGT-{slug}",
             "container": f"{TENANT_PREFIX}{slug}",
             "status": "stopped",
@@ -305,10 +322,11 @@ def start_target(target_id: str) -> dict:
             ensure_lab_network()
             network = LAB_NETWORK
 
+        bind = validate_bind(t.get("bind", HOST_BIND))
         container = t["container"]
         _docker([DOCKER, "rm", "-f", container], timeout=30)  # idempotent
         r = _docker(run_argv(container, image, t["host_port"],
-                             t["container_port"], network))
+                             t["container_port"], network, bind))
         if r.returncode != 0:
             t["status"] = "error"
             _save(registry)
@@ -316,7 +334,8 @@ def start_target(target_id: str) -> dict:
 
         cid = _container_id(container)
         t["status"] = "running"
-        t["url"] = f"http://{HOST_BIND}:{t['host_port']}"
+        shown = "127.0.0.1" if bind in ("127.0.0.1", "0.0.0.0") else bind
+        t["url"] = f"http://{shown}:{t['host_port']}"
         _save(registry)
 
     # wire telemetry (outside the registry lock; may start subprocesses)

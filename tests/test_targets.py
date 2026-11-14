@@ -48,6 +48,18 @@ class TestPureHelpers(unittest.TestCase):
         # a lab target must be local; the sandbox must not reach a registry
         self.assertIn("--pull=never", tg.run_argv("bb-tgt-x", "img:latest", 8100, 80))
 
+    def test_bind_default_localhost_custom_lan(self):
+        self.assertEqual(tg.validate_bind(None), "127.0.0.1")
+        self.assertEqual(tg.validate_bind("0.0.0.0"), "0.0.0.0")
+        self.assertEqual(tg.validate_bind("192.168.31.181"), "192.168.31.181")
+        for bad in ("example.com", "999.1.1.1", "1.2.3", "0.0.0.0; rm"):
+            with self.assertRaises(tg.TargetError):
+                tg.validate_bind(bad)
+
+    def test_run_argv_uses_bind_address(self):
+        argv = tg.run_argv("bb-tgt-x", "img:latest", 8100, 80, bind="0.0.0.0")
+        self.assertIn("0.0.0.0:8100:80", argv)
+
     def test_run_argv_attaches_isolated_network(self):
         argv = tg.run_argv("bb-tgt-x", "img:latest", 8100, 80, network="bb-lab")
         self.assertIn("--network", argv)
